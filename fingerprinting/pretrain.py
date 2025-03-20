@@ -12,7 +12,7 @@ from tcbench import (
     DATASETS,
 )
 
-artifacts_folder = Path("artifacts-mirage19-min10")
+artifacts_folder = Path("artifacts-mirage19")
 split_idx = 0
 
 state = pretrain(dataset_name=DATASETS.MIRAGE19, dataset_minpkts=10, device="cpu", artifacts_folder=artifacts_folder)
