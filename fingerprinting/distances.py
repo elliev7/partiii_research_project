@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import pickle
 import numpy as np
-
 from scipy.spatial.distance import cdist, pdist, squareform
 
 vectors_baseline = np.load('/home/ev357/tcbench/src/fingerprinting/artifacts-mirage19/baseline_vectors.npy')
