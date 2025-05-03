@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import faiss
 
 
-def build_faiss_index(data, labels, train_indices, distance_type, samples_per_class = None):
-    np.random.seed(42)
+def build_faiss_index(data, labels, train_indices, distance_type, samples_per_class = None, seed=42):
+    np.random.seed(seed)
 
     filtered_data = data[train_indices]
     filtered_labels = labels[train_indices]
@@ -67,82 +67,6 @@ def search_and_compare_labels(data, labels, test_indices, selected_indices, inde
     match_percentage = (matches / classified) * 100 if classified > 0 else 0
     return classified_percentage, match_percentage, min_distances
 
-def extract_results(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits):
-    classified_results = {li: [] for li in limits}
-    accuracy_results = {li: [] for li in limits}
-
-    for limit in limits:
-        for sample_size in samples:
-            index, selected_indices = build_faiss_index(
-                vectors, labels, train_indices, distance_type, sample_size
-            )
-            classified, accuracy, min_distances = search_and_compare_labels(
-                vectors, labels, test_indices, selected_indices, index, metric, limit
-            )
-            classified_results[limit].append(classified)
-            accuracy_results[limit].append(accuracy)   
-    return classified_results, accuracy_results, min_distances
-
-def plot_results_by_distance(classified_results, accuracy_results, samples, distances):
-    num_samples = len(samples)
-    fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
-    axes = axes.flatten() if num_samples > 1 else [axes]
-
-    for i, distance in enumerate(distances):
-        ax = axes[i]
-        
-        ax.plot(samples, accuracy_results[distance], label='Accuracy', color='blue')
-        ax.set_xlabel('Number of Samples Per Class') 
-        ax.set_ylabel('Accuracy (%)', color='blue')   
-        ax.tick_params(axis='y', labelcolor='blue')
-        ax.set_ylim(0, 100)
-        ax.set_title(f'Distance: {distance}')
-        ax.grid(True)
-        
-        ax2 = ax.twinx()
-        ax2.plot(samples, classified_results[distance], label='Classified %', color='green', linestyle='--')
-        ax2.set_xlabel('Number of Samples Per Class')
-        ax2.set_ylabel('Classified Percentage (%)', color='green')
-        ax2.set_ylim(0, 100)
-        ax2.tick_params(axis='y', labelcolor='green')
-
-    for j in range(i + 1, len(axes)):
-        fig.delaxes(axes[j])
-        
-    plt.tight_layout()
-    plt.show()
-
-def plot_results_by_sample_size(classified_results, accuracy_results, samples, distances):
-    num_samples = len(samples)
-    fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
-    axes = axes.flatten() if num_samples > 1 else [axes]
-
-    for i, sample_size in enumerate(samples):
-        ax = axes[i]
-
-        classified = [classified_results[distance][i] for distance in distances]
-        accuracy = [accuracy_results[distance][i] for distance in distances]
-
-        ax.plot(distances, accuracy, label='Accuracy', color='blue')
-        ax.set_xlabel('Distance')
-        ax.set_ylabel('Accuracy (%)', color='blue')
-        ax.tick_params(axis='y', labelcolor='blue')
-        ax.set_ylim(0, 100)
-        ax.set_title(f'Sample Size: {sample_size}')
-        ax.grid(True)
-
-        ax2 = ax.twinx()
-        ax2.plot(distances, classified, label='Classified %', color='green', linestyle='--')
-        ax2.set_ylabel('Classified Percentage (%)', color='green')
-        ax2.set_ylim(0, 100)
-        ax2.tick_params(axis='y', labelcolor='green')
-
-    for j in range(i + 1, len(axes)):
-        fig.delaxes(axes[j])
-
-    plt.tight_layout()
-    plt.show()
-
 def search_and_compare_labels_per_class(data, labels, test_indices, selected_indices, index, metric, limit=None):
     k = 1
     if metric == "distance":
@@ -185,6 +109,40 @@ def search_and_compare_labels_per_class(data, labels, test_indices, selected_ind
 
     return per_class_metrics
 
+def extract_results(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits):
+    classified_results = {li: [] for li in limits}
+    accuracy_results = {li: [] for li in limits}
+
+    for limit in limits:
+        for sample_size in samples:
+            index, selected_indices = build_faiss_index(
+                vectors, labels, train_indices, distance_type, sample_size
+            )
+            classified, accuracy, min_distances = search_and_compare_labels(
+                vectors, labels, test_indices, selected_indices, index, metric, limit
+            )
+            classified_results[limit].append(classified)
+            accuracy_results[limit].append(accuracy)   
+    return classified_results, accuracy_results, min_distances
+
+def extract_results_splits(vectors, labels, train_test_splits, distance_type, metric, samples, limits):
+    accuracy_results = {sample_size: {limit: [] for limit in limits} for sample_size in samples}
+    classified_results = {sample_size: {limit: [] for limit in limits} for sample_size in samples}
+
+    for train_indices, test_indices in train_test_splits:
+        for seed in range(40,50):
+            for sample_size in samples:
+                for limit in limits:
+                    index, selected_indices = build_faiss_index(
+                        vectors, labels, train_indices, distance_type, sample_size, seed
+                    )
+                    classified, accuracy, _ = search_and_compare_labels(
+                        vectors, labels, test_indices, selected_indices, index, metric, limit
+                    )
+                    accuracy_results[sample_size][limit].append(accuracy)
+                    classified_results[sample_size][limit].append(classified) 
+    return classified_results, accuracy_results
+
 def extract_results_per_class(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits):
     per_class_classified_results = {li: {sample: {} for sample in samples} for li in limits}
     per_class_accuracy_results = {li: {sample: {} for sample in samples} for li in limits}
@@ -207,6 +165,99 @@ def extract_results_per_class(vectors, labels, train_indices, test_indices, dist
                 per_class_accuracy_results[limit][sample_size][label].append(metrics["match_percentage"])
 
     return per_class_classified_results, per_class_accuracy_results
+
+def plot_results_by_distance(classified_results, accuracy_results, samples, distances):
+    num_samples = len(samples)
+    fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
+    axes = axes.flatten() if num_samples > 1 else [axes]
+
+    for i, distance in enumerate(distances):
+        ax = axes[i]
+        
+        ax.plot(samples, accuracy_results[distance], label='Accuracy', color='blue')
+        ax.set_xlabel('Number of Samples Per Class') 
+        ax.set_ylabel('Accuracy (%)', color='blue')   
+        ax.tick_params(axis='y', labelcolor='blue')
+        ax.set_ylim(0, 100)
+        ax.set_title(f'Distance: {distance}')
+        ax.grid(True)
+        
+        ax2 = ax.twinx()
+        ax2.plot(samples, classified_results[distance], label='Classified %', color='green', linestyle='--')
+        ax2.set_xlabel('Number of Samples Per Class')
+        ax2.set_ylabel('Coverage (%)', color='green')
+        ax2.set_ylim(0, 100)
+        ax2.tick_params(axis='y', labelcolor='green')
+
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+        
+    plt.tight_layout()
+    plt.show()
+
+def plot_results_by_sample_size(classified_results, accuracy_results, samples, distances):
+    num_samples = len(samples)
+    fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
+    axes = axes.flatten() if num_samples > 1 else [axes]
+
+    for i, sample_size in enumerate(samples):
+        ax = axes[i]
+
+        classified = [classified_results[distance][i] for distance in distances]
+        accuracy = [accuracy_results[distance][i] for distance in distances]
+
+        ax.plot(distances, accuracy, label='Accuracy', color='blue')
+        ax.set_xlabel('Distance')
+        ax.set_ylabel('Accuracy (%)', color='blue')
+        ax.tick_params(axis='y', labelcolor='blue')
+        ax.set_ylim(0, 100)
+        ax.set_title(f'Sample Size: {sample_size}')
+        ax.grid(True)
+
+        ax2 = ax.twinx()
+        ax2.plot(distances, classified, label='Classified %', color='green', linestyle='--')
+        ax2.set_ylabel('Coverage (%)', color='green')
+        ax2.set_ylim(0, 100)
+        ax2.tick_params(axis='y', labelcolor='green')
+
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_results_by_sample_size_splits(classified_results, accuracy_results, samples, distances):
+    num_samples = len(samples)
+    fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
+    axes = axes.flatten() if num_samples > 1 else [axes]
+
+    for i, sample_size in enumerate(samples):
+        ax = axes[i]
+        ax2 = ax.twinx()
+
+        for run_idx in range(len(accuracy_results[sample_size][distances[0]])):
+            accuracy = [accuracy_results[sample_size][distance][run_idx] for distance in distances]
+            classified = [classified_results[sample_size][distance][run_idx] for distance in distances]
+
+            ax.plot(distances, accuracy, color='blue', alpha=0.3, linewidth=0.5, label='Accuracy' if run_idx == 0 else None)
+            ax2.plot(distances, classified, color='green', alpha=0.3, linestyle='--', linewidth=0.5, label='Classified %' if run_idx == 0 else None)
+
+        ax.set_xlabel('Distance')
+        ax.set_ylabel('Accuracy (%)', color='blue')
+        ax.tick_params(axis='y', labelcolor='blue')
+        ax.set_ylim(0, 100)
+        ax.set_title(f'Sample Size: {sample_size}')
+        ax.grid(True)
+
+        ax2.set_ylabel('Coverage (%)', color='green')
+        ax2.set_ylim(0, 100)
+        ax2.tick_params(axis='y', labelcolor='green')
+
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.show()
 
 def plot_results_by_sample_size_per_class(per_class_classified_results, per_class_accuracy_results, samples, distances):
     num_samples = len(samples)
@@ -244,7 +295,7 @@ def plot_results_by_sample_size_per_class(per_class_classified_results, per_clas
 
             ax2.plot(distances, classified, label=f'Class {class_label} Classified %', color=colors[class_idx], linestyle='--')
         
-        ax2.set_ylabel('Classified Percentage (%) --')
+        ax2.set_ylabel('Coverage (%) --')
         ax2.set_ylim(0, 100)
         ax2.tick_params(axis='y')
 
