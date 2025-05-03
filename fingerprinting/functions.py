@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import faiss
 
-
 def build_faiss_index(data, labels, train_indices, distance_type, samples_per_class = None, seed=42):
     np.random.seed(seed)
 
@@ -67,6 +66,51 @@ def search_and_compare_labels(data, labels, test_indices, selected_indices, inde
     match_percentage = (matches / classified) * 100 if classified > 0 else 0
     return classified_percentage, match_percentage, min_distances
 
+def search_and_compare_labels_majority(data, labels, test_indices, selected_indices, index, metric, limit=None):
+    k = 10
+    if metric == "distance":
+        D, I = index.search(data[test_indices], k)
+    elif metric == "similarity":
+        query_vectors = data[test_indices]
+        query_vectors = query_vectors / np.linalg.norm(query_vectors, axis=1, keepdims=True)
+        D, I = index.search(query_vectors, k)
+    
+    test_labels = labels[test_indices]
+    neighbor_labels = labels[selected_indices[I.flatten()]].reshape(I.shape)
+    
+    matches = 0
+    classified = 0
+
+    for i in range(len(test_labels)):  
+        if metric == "distance":
+            distances = np.sqrt(D[i])
+            valid_indices = distances <= limit if limit is not None else np.arange(len(distances))
+        elif metric == "similarity":
+            distances = D[i]
+            valid_indices = distances >= limit if limit is not None else np.arange(len(distances))
+        
+        valid_neighbors = neighbor_labels[i][valid_indices]
+        valid_distances = distances[valid_indices]
+
+        if len(valid_neighbors) == 0:
+            continue
+
+        unique_labels, counts = np.unique(valid_neighbors, return_counts=True)
+        max_count = np.max(counts)
+        majority_labels = unique_labels[counts == max_count]
+
+        if len(majority_labels) > 1:
+            closest_label = majority_labels[np.argmin([valid_distances[valid_neighbors == label][0] for label in majority_labels])]
+        else:
+            closest_label = majority_labels[0]
+
+        classified += 1
+        matches += (test_labels[i] == closest_label)
+
+    classified_percentage = (classified / len(test_labels)) * 100
+    match_percentage = (matches / classified) * 100 if classified > 0 else 0
+    return classified_percentage, match_percentage
+
 def search_and_compare_labels_per_class(data, labels, test_indices, selected_indices, index, metric, limit=None):
     k = 1
     if metric == "distance":
@@ -124,6 +168,22 @@ def extract_results(vectors, labels, train_indices, test_indices, distance_type,
             classified_results[limit].append(classified)
             accuracy_results[limit].append(accuracy)   
     return classified_results, accuracy_results, min_distances
+
+def extract_results_majority(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits):
+    classified_results = {li: [] for li in limits}
+    accuracy_results = {li: [] for li in limits}
+
+    for limit in limits:
+        for sample_size in samples:
+            index, selected_indices = build_faiss_index(
+                vectors, labels, train_indices, distance_type, sample_size
+            )
+            classified, accuracy = search_and_compare_labels_majority(
+                vectors, labels, test_indices, selected_indices, index, metric, limit
+            )
+            classified_results[limit].append(classified)
+            accuracy_results[limit].append(accuracy)   
+    return classified_results, accuracy_results
 
 def extract_results_splits(vectors, labels, train_test_splits, distance_type, metric, samples, limits):
     accuracy_results = {sample_size: {limit: [] for limit in limits} for sample_size in samples}
