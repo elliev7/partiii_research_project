@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import faiss
 
-def build_faiss_index(data, labels, train_indices, distance_type, samples_per_class = None, seed=42):
+def build_faiss_index(data, labels, train_indices, distance_type, samples_per_class=None, exclude_class=None, seed=42):
     np.random.seed(seed)
 
     filtered_data = data[train_indices]
@@ -12,14 +12,21 @@ def build_faiss_index(data, labels, train_indices, distance_type, samples_per_cl
     selected_data = []
     selected_indices = []
     unique_labels = np.unique(filtered_labels)
+
     for label in unique_labels:
+        if exclude_class is not None and label == exclude_class:
+            continue  # Skip the specified class
+
         label_indices = np.where(filtered_labels == label)[0]
         if samples_per_class is None or samples_per_class == -1:
             selected_label_indices = label_indices
         else:
-            selected_label_indices = np.random.choice(label_indices, size=min(samples_per_class, len(label_indices)), replace=False)
+            selected_label_indices = np.random.choice(
+                label_indices, size=min(samples_per_class, len(label_indices)), replace=False
+            )
         selected_data.append(filtered_data[selected_label_indices])
         selected_indices.extend(train_indices[selected_label_indices])
+
     selected_data = np.vstack(selected_data)
     selected_indices = np.array(selected_indices)
 
@@ -47,7 +54,7 @@ def search_and_compare_labels(data, labels, test_indices, selected_indices, inde
     neighbor_labels = labels[selected_indices[I.flatten()]].reshape(I.shape)
     
     matches = 0
-    classified = 0
+    coverage = 0
     min_distances = []
 
     for i in range(len(test_labels)):  
@@ -59,12 +66,12 @@ def search_and_compare_labels(data, labels, test_indices, selected_indices, inde
             min_distances.append(D[i,0])
             if limit is not None and D[i, 0] < limit:
                 continue
-        classified += 1
+        coverage += 1
         matches += test_labels[i] in neighbor_labels[i, :1]
 
-    classified_percentage = (classified / len(test_labels)) * 100
-    match_percentage = (matches / classified) * 100 if classified > 0 else 0
-    return classified_percentage, match_percentage, min_distances
+    coverage_percentage = (coverage / len(test_labels)) * 100
+    match_percentage = (matches / coverage) * 100 if coverage > 0 else 0
+    return coverage_percentage, match_percentage, min_distances
 
 def search_and_compare_labels_majority(data, labels, test_indices, selected_indices, index, metric, limit=None):
     k = 10
@@ -79,7 +86,7 @@ def search_and_compare_labels_majority(data, labels, test_indices, selected_indi
     neighbor_labels = labels[selected_indices[I.flatten()]].reshape(I.shape)
     
     matches = 0
-    classified = 0
+    coverage = 0
 
     for i in range(len(test_labels)):  
         if metric == "distance":
@@ -104,12 +111,12 @@ def search_and_compare_labels_majority(data, labels, test_indices, selected_indi
         else:
             closest_label = majority_labels[0]
 
-        classified += 1
+        coverage += 1
         matches += (test_labels[i] == closest_label)
 
-    classified_percentage = (classified / len(test_labels)) * 100
-    match_percentage = (matches / classified) * 100 if classified > 0 else 0
-    return classified_percentage, match_percentage
+    coverage_percentage = (coverage / len(test_labels)) * 100
+    match_percentage = (matches / coverage) * 100 if coverage > 0 else 0
+    return coverage_percentage, match_percentage
 
 def search_and_compare_labels_per_class(data, labels, test_indices, selected_indices, index, metric, limit=None):
     k = 1
@@ -124,7 +131,7 @@ def search_and_compare_labels_per_class(data, labels, test_indices, selected_ind
     neighbor_labels = labels[selected_indices[I.flatten()]].reshape(I.shape)
     
     unique_labels = np.unique(test_labels)
-    per_class_results = {label: {"classified": 0, "matches": 0, "total": 0} for label in unique_labels}
+    per_class_results = {label: {"coverage": 0, "matches": 0, "total": 0} for label in unique_labels}
 
     for i in range(len(test_labels)):
         label = test_labels[i]
@@ -135,42 +142,42 @@ def search_and_compare_labels_per_class(data, labels, test_indices, selected_ind
         if metric == "similarity" and limit is not None and D[i, 0] < limit:
             continue
 
-        per_class_results[label]["classified"] += 1
+        per_class_results[label]["coverage"] += 1
         per_class_results[label]["matches"] += test_labels[i] in neighbor_labels[i, :1]
 
     per_class_metrics = {}
     for label, results in per_class_results.items():
-        classified = results["classified"]
+        coverage = results["coverage"]
         total = results["total"]
         matches = results["matches"]
 
-        classified_percentage = (classified / total) * 100 if total > 0 else 0
-        match_percentage = (matches / classified) * 100 if classified > 0 else 0
+        coverage_percentage = (coverage / total) * 100 if total > 0 else 0
+        match_percentage = (matches / coverage) * 100 if coverage > 0 else 0
         per_class_metrics[label] = {
-            "classified_percentage": classified_percentage,
+            "coverage_percentage": coverage_percentage,
             "match_percentage": match_percentage,
         }
 
     return per_class_metrics
 
-def extract_results(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits):
-    classified_results = {li: [] for li in limits}
+def extract_results(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits, exclude_class=None):
+    coverage_results = {li: [] for li in limits}
     accuracy_results = {li: [] for li in limits}
 
     for limit in limits:
         for sample_size in samples:
             index, selected_indices = build_faiss_index(
-                vectors, labels, train_indices, distance_type, sample_size
+                vectors, labels, train_indices, distance_type, sample_size, exclude_class=exclude_class
             )
-            classified, accuracy, min_distances = search_and_compare_labels(
+            coverage, accuracy, min_distances = search_and_compare_labels(
                 vectors, labels, test_indices, selected_indices, index, metric, limit
             )
-            classified_results[limit].append(classified)
+            coverage_results[limit].append(coverage)
             accuracy_results[limit].append(accuracy)   
-    return classified_results, accuracy_results, min_distances
+    return coverage_results, accuracy_results, min_distances
 
 def extract_results_majority(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits):
-    classified_results = {li: [] for li in limits}
+    coverage_results = {li: [] for li in limits}
     accuracy_results = {li: [] for li in limits}
 
     for limit in limits:
@@ -178,16 +185,16 @@ def extract_results_majority(vectors, labels, train_indices, test_indices, dista
             index, selected_indices = build_faiss_index(
                 vectors, labels, train_indices, distance_type, sample_size
             )
-            classified, accuracy = search_and_compare_labels_majority(
+            coverage, accuracy = search_and_compare_labels_majority(
                 vectors, labels, test_indices, selected_indices, index, metric, limit
             )
-            classified_results[limit].append(classified)
+            coverage_results[limit].append(coverage)
             accuracy_results[limit].append(accuracy)   
-    return classified_results, accuracy_results
+    return coverage_results, accuracy_results
 
 def extract_results_splits(vectors, labels, train_test_splits, distance_type, metric, samples, limits):
     accuracy_results = {sample_size: {limit: [] for limit in limits} for sample_size in samples}
-    classified_results = {sample_size: {limit: [] for limit in limits} for sample_size in samples}
+    coverage_results = {sample_size: {limit: [] for limit in limits} for sample_size in samples}
 
     for train_indices, test_indices in train_test_splits:
         for seed in range(40,50):
@@ -196,15 +203,15 @@ def extract_results_splits(vectors, labels, train_test_splits, distance_type, me
                     index, selected_indices = build_faiss_index(
                         vectors, labels, train_indices, distance_type, sample_size, seed
                     )
-                    classified, accuracy, _ = search_and_compare_labels(
+                    coverage, accuracy, _ = search_and_compare_labels(
                         vectors, labels, test_indices, selected_indices, index, metric, limit
                     )
                     accuracy_results[sample_size][limit].append(accuracy)
-                    classified_results[sample_size][limit].append(classified) 
-    return classified_results, accuracy_results
+                    coverage_results[sample_size][limit].append(coverage) 
+    return coverage_results, accuracy_results
 
 def extract_results_per_class(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits):
-    per_class_classified_results = {li: {sample: {} for sample in samples} for li in limits}
+    per_class_coverage_results = {li: {sample: {} for sample in samples} for li in limits}
     per_class_accuracy_results = {li: {sample: {} for sample in samples} for li in limits}
 
     for limit in limits:
@@ -217,16 +224,32 @@ def extract_results_per_class(vectors, labels, train_indices, test_indices, dist
             )
 
             for label, metrics in per_class_metrics.items():
-                if label not in per_class_classified_results[limit][sample_size]:
-                    per_class_classified_results[limit][sample_size][label] = []
+                if label not in per_class_coverage_results[limit][sample_size]:
+                    per_class_coverage_results[limit][sample_size][label] = []
                     per_class_accuracy_results[limit][sample_size][label] = []
 
-                per_class_classified_results[limit][sample_size][label].append(metrics["classified_percentage"])
+                per_class_coverage_results[limit][sample_size][label].append(metrics["coverage_percentage"])
                 per_class_accuracy_results[limit][sample_size][label].append(metrics["match_percentage"])
 
-    return per_class_classified_results, per_class_accuracy_results
+    return per_class_coverage_results, per_class_accuracy_results
 
-def plot_results_by_distance(classified_results, accuracy_results, samples, distances):
+def extract_results_exclude(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits, num_classes=20):
+    coverage_results_all = {}
+    accuracy_results_all = {}
+
+    for excluded_class in range(num_classes):
+        test_indices_excluded_class = test_indices[np.where(labels[test_indices] == excluded_class)[0]]
+        coverage_results, accuracy_results, _ = extract_results(
+            vectors, labels, train_indices, test_indices_excluded_class,
+            distance_type, metric, samples, limits, exclude_class=excluded_class
+        )
+
+        coverage_results_all[excluded_class] = coverage_results
+        accuracy_results_all[excluded_class] = accuracy_results
+
+    return coverage_results_all, accuracy_results_all
+
+def plot_results_by_distance(coverage_results, accuracy_results, samples, distances):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
     axes = axes.flatten() if num_samples > 1 else [axes]
@@ -243,7 +266,7 @@ def plot_results_by_distance(classified_results, accuracy_results, samples, dist
         ax.grid(True)
         
         ax2 = ax.twinx()
-        ax2.plot(samples, classified_results[distance], label='Classified %', color='green', linestyle='--')
+        ax2.plot(samples, coverage_results[distance], label='Coverage %', color='green', linestyle='--')
         ax2.set_xlabel('Number of Samples Per Class')
         ax2.set_ylabel('Coverage (%)', color='green')
         ax2.set_ylim(0, 100)
@@ -255,7 +278,7 @@ def plot_results_by_distance(classified_results, accuracy_results, samples, dist
     plt.tight_layout()
     plt.show()
 
-def plot_results_by_sample_size(classified_results, accuracy_results, samples, distances):
+def plot_results_by_sample_size(coverage_results, accuracy_results, samples, distances):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
     axes = axes.flatten() if num_samples > 1 else [axes]
@@ -263,7 +286,7 @@ def plot_results_by_sample_size(classified_results, accuracy_results, samples, d
     for i, sample_size in enumerate(samples):
         ax = axes[i]
 
-        classified = [classified_results[distance][i] for distance in distances]
+        coverage = [coverage_results[distance][i] for distance in distances]
         accuracy = [accuracy_results[distance][i] for distance in distances]
 
         ax.plot(distances, accuracy, label='Accuracy', color='blue')
@@ -275,7 +298,7 @@ def plot_results_by_sample_size(classified_results, accuracy_results, samples, d
         ax.grid(True)
 
         ax2 = ax.twinx()
-        ax2.plot(distances, classified, label='Classified %', color='green', linestyle='--')
+        ax2.plot(distances, coverage, label='Coverage %', color='green', linestyle='--')
         ax2.set_ylabel('Coverage (%)', color='green')
         ax2.set_ylim(0, 100)
         ax2.tick_params(axis='y', labelcolor='green')
@@ -286,7 +309,7 @@ def plot_results_by_sample_size(classified_results, accuracy_results, samples, d
     plt.tight_layout()
     plt.show()
 
-def plot_results_by_sample_size_splits(classified_results, accuracy_results, samples, distances):
+def plot_results_by_sample_size_splits(coverage_results, accuracy_results, samples, distances):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
     axes = axes.flatten() if num_samples > 1 else [axes]
@@ -297,10 +320,10 @@ def plot_results_by_sample_size_splits(classified_results, accuracy_results, sam
 
         for run_idx in range(len(accuracy_results[sample_size][distances[0]])):
             accuracy = [accuracy_results[sample_size][distance][run_idx] for distance in distances]
-            classified = [classified_results[sample_size][distance][run_idx] for distance in distances]
+            coverage = [coverage_results[sample_size][distance][run_idx] for distance in distances]
 
             ax.plot(distances, accuracy, color='blue', alpha=0.3, linewidth=0.5, label='Accuracy' if run_idx == 0 else None)
-            ax2.plot(distances, classified, color='green', alpha=0.3, linestyle='--', linewidth=0.5, label='Classified %' if run_idx == 0 else None)
+            ax2.plot(distances, coverage, color='green', alpha=0.3, linestyle='--', linewidth=0.5, label='Coverage %' if run_idx == 0 else None)
 
         ax.set_xlabel('Distance')
         ax.set_ylabel('Accuracy (%)', color='blue')
@@ -319,13 +342,13 @@ def plot_results_by_sample_size_splits(classified_results, accuracy_results, sam
     plt.tight_layout()
     plt.show()
 
-def plot_results_by_sample_size_per_class(per_class_classified_results, per_class_accuracy_results, samples, distances):
+def plot_results_by_sample_size_per_class(per_class_coverage_results, per_class_accuracy_results, samples, distances):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
     axes = axes.flatten() if num_samples > 1 else [axes]
 
     unique_classes = set()
-    for limit_results in per_class_classified_results.values():
+    for limit_results in per_class_coverage_results.values():
         for sample_results in limit_results.values():
             unique_classes.update(sample_results.keys())
     unique_classes = sorted(unique_classes)
@@ -336,8 +359,8 @@ def plot_results_by_sample_size_per_class(per_class_classified_results, per_clas
         ax2 = ax.twinx()
 
         for class_idx, class_label in enumerate(unique_classes):
-            classified = [
-                per_class_classified_results[distance][sample_size].get(class_label, [0])[0]
+            coverage = [
+                per_class_coverage_results[distance][sample_size].get(class_label, [0])[0]
                 for distance in distances
             ]
             accuracy = [
@@ -353,7 +376,7 @@ def plot_results_by_sample_size_per_class(per_class_classified_results, per_clas
             ax.set_title(f'Sample Size: {sample_size}')
             ax.grid(True)
 
-            ax2.plot(distances, classified, label=f'Class {class_label} Classified %', color=colors[class_idx], linestyle='--')
+            ax2.plot(distances, coverage, label=f'Class {class_label} Coverage %', color=colors[class_idx], linestyle='--')
         
         ax2.set_ylabel('Coverage (%) --')
         ax2.set_ylim(0, 100)
@@ -361,6 +384,43 @@ def plot_results_by_sample_size_per_class(per_class_classified_results, per_clas
 
     for j in range(i + 1, len(axes)):
         fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_results_by_sample_size_per_excluded_class(classified_results_all, accuracy_results_all, samples, limits):
+    num_samples = len(samples)
+    fig, axes = plt.subplots(num_samples, 1, figsize=(8, 4 * num_samples), sharex=True)
+
+    axes = axes.flatten() if num_samples > 1 else [axes]
+
+    excluded_classes = list(classified_results_all.keys())
+    colors = plt.cm.tab10(np.linspace(0, 1, len(excluded_classes)))
+
+    for i, sample_size in enumerate(samples):
+        ax = axes[i]
+        ax2 = ax.twinx()
+
+        for class_idx, excluded_class in enumerate(excluded_classes):
+            classified_results = classified_results_all[excluded_class]
+            accuracy_results = accuracy_results_all[excluded_class]
+
+            accuracies = [np.mean(accuracy_results[limit][i]) for limit in limits]
+            classified = [np.mean(classified_results[limit][i]) for limit in limits]
+
+            ax.plot(limits, accuracies, label=f'Excluded Class {excluded_class} Accuracy', linestyle='-', color=colors[class_idx])
+            ax2.plot(limits, classified, label=f'Excluded Class {excluded_class} Coverage', linestyle='--', color=colors[class_idx])
+
+        ax.set_xlabel('Distance Threshold')
+        ax.set_ylabel('Accuracy (%)')
+        ax.tick_params(axis='y')
+        ax.set_ylim(0, 100)
+        ax.set_title(f'Sample Size: {sample_size}')
+        ax.grid(True)
+
+        ax2.set_ylabel('Coverage (%)')
+        ax2.tick_params(axis='y')
+        ax2.set_ylim(0, 100)
 
     plt.tight_layout()
     plt.show()
