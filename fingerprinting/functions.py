@@ -15,7 +15,7 @@ def build_faiss_index(data, labels, train_indices, distance_type, samples_per_cl
 
     for label in unique_labels:
         if exclude_class is not None and label == exclude_class:
-            continue  # Skip the specified class
+            continue
 
         label_indices = np.where(filtered_labels == label)[0]
         if samples_per_class is None or samples_per_class == -1:
@@ -197,17 +197,18 @@ def extract_results_splits(vectors, labels, train_test_splits, distance_type, me
     coverage_results = {sample_size: {limit: [] for limit in limits} for sample_size in samples}
 
     for train_indices, test_indices in train_test_splits:
-        for seed in range(40,50):
+        for seed in range(40, 50):
             for sample_size in samples:
                 for limit in limits:
                     index, selected_indices = build_faiss_index(
-                        vectors, labels, train_indices, distance_type, sample_size, seed
+                        vectors, labels, train_indices, distance_type, sample_size, seed=seed
                     )
                     coverage, accuracy, _ = search_and_compare_labels(
                         vectors, labels, test_indices, selected_indices, index, metric, limit
                     )
                     accuracy_results[sample_size][limit].append(accuracy)
-                    coverage_results[sample_size][limit].append(coverage) 
+                    coverage_results[sample_size][limit].append(coverage)
+                    
     return coverage_results, accuracy_results
 
 def extract_results_per_class(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits):
@@ -309,7 +310,7 @@ def plot_results_by_sample_size(coverage_results, accuracy_results, samples, dis
     plt.tight_layout()
     plt.show()
 
-def plot_results_by_sample_size_splits(classified_results, accuracy_results, samples, distances):
+def plot_results_by_sample_size_splits(coverage_results, accuracy_results, samples, distances):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
     axes = axes.flatten() if num_samples > 1 else [axes]
@@ -319,9 +320,9 @@ def plot_results_by_sample_size_splits(classified_results, accuracy_results, sam
         ax2 = ax.twinx()
         for run_idx in range(len(accuracy_results[sample_size][distances[0]])):
             accuracy = [accuracy_results[sample_size][distance][run_idx] for distance in distances]
-            classified = [classified_results[sample_size][distance][run_idx] for distance in distances]
+            coverage = [coverage_results[sample_size][distance][run_idx] for distance in distances]
             ax.plot(distances, accuracy, color='blue', alpha=0.3, linewidth=0.5, label='Accuracy' if run_idx == 0 else None)
-            ax2.plot(distances, classified, color='green', alpha=0.3, linestyle='--', linewidth=0.5, label='Classified %' if run_idx == 0 else None)
+            ax2.plot(distances, coverage, color='green', alpha=0.3, linestyle='--', linewidth=0.5, label='Coverage %' if run_idx == 0 else None)
     
         ax.set_xlabel('Distance')
         ax.set_ylabel('Accuracy (%)', color='blue')
