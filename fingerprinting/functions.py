@@ -309,33 +309,31 @@ def plot_results_by_sample_size(coverage_results, accuracy_results, samples, dis
     plt.tight_layout()
     plt.show()
 
-def plot_results_by_sample_size_splits(coverage_results, accuracy_results, samples, distances):
+def plot_results_by_sample_size_splits(classified_results, accuracy_results, samples, distances):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
     axes = axes.flatten() if num_samples > 1 else [axes]
-
+    
     for i, sample_size in enumerate(samples):
         ax = axes[i]
         ax2 = ax.twinx()
-
         for run_idx in range(len(accuracy_results[sample_size][distances[0]])):
             accuracy = [accuracy_results[sample_size][distance][run_idx] for distance in distances]
-            coverage = [coverage_results[sample_size][distance][run_idx] for distance in distances]
-
+            classified = [classified_results[sample_size][distance][run_idx] for distance in distances]
             ax.plot(distances, accuracy, color='blue', alpha=0.3, linewidth=0.5, label='Accuracy' if run_idx == 0 else None)
-            ax2.plot(distances, coverage, color='green', alpha=0.3, linestyle='--', linewidth=0.5, label='Coverage %' if run_idx == 0 else None)
-
+            ax2.plot(distances, classified, color='green', alpha=0.3, linestyle='--', linewidth=0.5, label='Classified %' if run_idx == 0 else None)
+    
         ax.set_xlabel('Distance')
         ax.set_ylabel('Accuracy (%)', color='blue')
         ax.tick_params(axis='y', labelcolor='blue')
         ax.set_ylim(0, 100)
         ax.set_title(f'Sample Size: {sample_size}')
         ax.grid(True)
-
+    
         ax2.set_ylabel('Coverage (%)', color='green')
         ax2.set_ylim(0, 100)
         ax2.tick_params(axis='y', labelcolor='green')
-
+    
     for j in range(i + 1, len(axes)):
         fig.delaxes(axes[j])
 
@@ -388,13 +386,13 @@ def plot_results_by_sample_size_per_class(per_class_coverage_results, per_class_
     plt.tight_layout()
     plt.show()
 
-def plot_results_by_sample_size_per_excluded_class(classified_results_all, accuracy_results_all, samples, limits):
+def plot_results_by_sample_size_per_excluded_class(coverage_results_all, accuracy_results_all, samples, limits):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(8, 4 * num_samples), sharex=True)
 
     axes = axes.flatten() if num_samples > 1 else [axes]
 
-    excluded_classes = list(classified_results_all.keys())
+    excluded_classes = list(coverage_results_all.keys())
     colors = plt.cm.tab10(np.linspace(0, 1, len(excluded_classes)))
 
     for i, sample_size in enumerate(samples):
@@ -402,14 +400,14 @@ def plot_results_by_sample_size_per_excluded_class(classified_results_all, accur
         ax2 = ax.twinx()
 
         for class_idx, excluded_class in enumerate(excluded_classes):
-            classified_results = classified_results_all[excluded_class]
+            coverage_results = coverage_results_all[excluded_class]
             accuracy_results = accuracy_results_all[excluded_class]
 
             accuracies = [np.mean(accuracy_results[limit][i]) for limit in limits]
-            classified = [np.mean(classified_results[limit][i]) for limit in limits]
+            coverage = [np.mean(coverage_results[limit][i]) for limit in limits]
 
-            ax.plot(limits, accuracies, label=f'Excluded Class {excluded_class} Accuracy', linestyle='-', color=colors[class_idx])
-            ax2.plot(limits, classified, label=f'Excluded Class {excluded_class} Coverage', linestyle='--', color=colors[class_idx])
+            ax.plot(limits, accuracies, linestyle='-', color=colors[class_idx])
+            ax2.plot(limits, coverage, linestyle='--', color=colors[class_idx])
 
         ax.set_xlabel('Distance Threshold')
         ax.set_ylabel('Accuracy (%)')
