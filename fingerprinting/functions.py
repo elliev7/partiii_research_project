@@ -350,7 +350,9 @@ def plot_results_by_sample_size_per_class(per_class_coverage_results, per_class_
         for sample_results in limit_results.values():
             unique_classes.update(sample_results.keys())
     unique_classes = sorted(unique_classes)
-    colors = plt.cm.tab10(np.linspace(0, 1, len(unique_classes)))
+
+    color_map = {label: plt.cm.tab20(i / 20) for i, label in enumerate(range(20))}
+    colors = [color_map[label] for label in unique_classes]
 
     for i, sample_size in enumerate(samples):
         ax = axes[i]
@@ -388,12 +390,13 @@ def plot_results_by_sample_size_per_class(per_class_coverage_results, per_class_
 
 def plot_results_by_sample_size_per_excluded_class(coverage_results_all, accuracy_results_all, samples, limits):
     num_samples = len(samples)
-    fig, axes = plt.subplots(num_samples, 1, figsize=(8, 4 * num_samples), sharex=True)
+    fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
 
     axes = axes.flatten() if num_samples > 1 else [axes]
 
     excluded_classes = list(coverage_results_all.keys())
-    colors = plt.cm.tab10(np.linspace(0, 1, len(excluded_classes)))
+    color_map = {label: plt.cm.tab20(i / 20) for i, label in enumerate(range(20))}
+    colors = [color_map[label] for label in excluded_classes]
 
     for i, sample_size in enumerate(samples):
         ax = axes[i]
