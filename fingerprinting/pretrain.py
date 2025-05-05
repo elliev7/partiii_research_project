@@ -19,14 +19,14 @@ state = pretrain(dataset_name=DATASETS.MIRAGE19, dataset_minpkts=10, device="cpu
 
 trained_model = state["best_net"]
 
-print("🔍 Model architecture used for training:")
+print("Model architecture used for training:")
 print(trained_model)
 
 weights_path = artifacts_folder / f"best_model_weights_pretrain_split_{split_idx}.pt"
 state_dict = torch.load(weights_path, map_location="cpu")
 
-print("\n🔍 Saved weight layers and shapes:")
+print("\nSaved weight layers and shapes:")
 for key, value in state_dict.items():
     print(f"{key}: {value.shape}")
 
-print("\n✅ Training completed. Logs captured.")
+print("\nTraining completed. Logs captured.")
