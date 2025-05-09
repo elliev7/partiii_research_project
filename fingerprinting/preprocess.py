@@ -22,7 +22,33 @@ def process_flow(row):
 vectors_baseline = np.array(df.apply(process_flow, axis=1).tolist())
 scaler = StandardScaler()
 vectors_baseline = scaler.fit_transform(vectors_baseline)
-labels_baseline = df['label'].factorize()[0]
+
+label_to_class = {
+    "com.joelapenna.foursquared": 0,
+    "com.contextlogic.wish": 1,
+    "com.pinterest": 2,
+    "com.tripadvisor.tripadvisor": 3,
+    "com.groupon": 4,
+    "com.accuweather.android": 5,
+    "com.waze": 6,
+    "com.duolingo": 7,
+    "com.viber.voip": 8,
+    "com.facebook.katana": 9,
+    "de.motain.iliga": 10,
+    "it.subito": 11,
+    "com.facebook.orca": 12,
+    "com.dropbox.android": 13,
+    "com.twitter.android": 14,
+    "com.google.android.youtube": 15,
+    "com.spotify.music": 16,
+    "com.iconology.comics": 17,
+    "com.trello": 18,
+    "air.com.hypah.io.slither": 19,
+}
+
+df['class'] = df['label'].map(label_to_class)
+df['class'] = df['class'].astype(int)
+labels_baseline = df['class'].values
 
 np.save('/home/ev357/tcbench/src/fingerprinting/artifacts-mirage19/baseline_vectors.npy', vectors_baseline)
 np.save('/home/ev357/tcbench/src/fingerprinting/artifacts-mirage19/baseline_labels.npy', labels_baseline)
