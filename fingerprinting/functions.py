@@ -250,36 +250,7 @@ def extract_results_exclude(vectors, labels, train_indices, test_indices, distan
 
     return coverage_results_all, accuracy_results_all
 
-def plot_results_by_distance(coverage_results, accuracy_results, samples, distances):
-    num_samples = len(samples)
-    fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
-    axes = axes.flatten() if num_samples > 1 else [axes]
-
-    for i, distance in enumerate(distances):
-        ax = axes[i]
-        
-        ax.plot(samples, accuracy_results[distance], label='Accuracy', color='blue')
-        ax.set_xlabel('Number of Samples Per Class') 
-        ax.set_ylabel('Accuracy (%)', color='blue')   
-        ax.tick_params(axis='y', labelcolor='blue')
-        ax.set_ylim(0, 100)
-        ax.set_title(f'Distance: {distance}')
-        ax.grid(True)
-        
-        ax2 = ax.twinx()
-        ax2.plot(samples, coverage_results[distance], label='Coverage %', color='green', linestyle='--')
-        ax2.set_xlabel('Number of Samples Per Class')
-        ax2.set_ylabel('Coverage (%)', color='green')
-        ax2.set_ylim(0, 100)
-        ax2.tick_params(axis='y', labelcolor='green')
-
-    for j in range(i + 1, len(axes)):
-        fig.delaxes(axes[j])
-        
-    plt.tight_layout()
-    plt.show()
-
-def plot_results_by_sample_size(coverage_results, accuracy_results, samples, distances):
+def plot_results(coverage_results, accuracy_results, samples, distances, reverse=False):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
     axes = axes.flatten() if num_samples > 1 else [axes]
@@ -298,6 +269,10 @@ def plot_results_by_sample_size(coverage_results, accuracy_results, samples, dis
         ax.set_title(f'Sample Size: {sample_size}')
         ax.grid(True)
 
+        if reverse:
+            ax.invert_xaxis()
+            ax.set_xlabel('Similarity')
+
         ax2 = ax.twinx()
         ax2.plot(distances, coverage, label='Coverage %', color='green', linestyle='--')
         ax2.set_ylabel('Coverage (%)', color='green')
@@ -310,7 +285,7 @@ def plot_results_by_sample_size(coverage_results, accuracy_results, samples, dis
     plt.tight_layout()
     plt.show()
 
-def plot_results_by_sample_size_splits(coverage_results, accuracy_results, samples, distances):
+def plot_results_splits(coverage_results, accuracy_results, samples, distances, reverse=False):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
     axes = axes.flatten() if num_samples > 1 else [axes]
@@ -330,6 +305,10 @@ def plot_results_by_sample_size_splits(coverage_results, accuracy_results, sampl
         ax.set_ylim(0, 100)
         ax.set_title(f'Sample Size: {sample_size}')
         ax.grid(True)
+
+        if reverse:
+            ax.invert_xaxis()
+            ax.set_xlabel('Similarity')
     
         ax2.set_ylabel('Coverage (%)', color='green')
         ax2.set_ylim(0, 100)
@@ -341,7 +320,7 @@ def plot_results_by_sample_size_splits(coverage_results, accuracy_results, sampl
     plt.tight_layout()
     plt.show()
 
-def plot_results_by_sample_size_per_class(per_class_coverage_results, per_class_accuracy_results, samples, distances):
+def plot_results_per_class(per_class_coverage_results, per_class_accuracy_results, samples, distances, reverse=False):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
     axes = axes.flatten() if num_samples > 1 else [axes]
@@ -383,13 +362,17 @@ def plot_results_by_sample_size_per_class(per_class_coverage_results, per_class_
         ax2.set_ylim(0, 100)
         ax2.tick_params(axis='y')
 
+        if reverse:
+            ax.invert_xaxis()
+            ax.set_xlabel('Similarity')
+
     for j in range(i + 1, len(axes)):
         fig.delaxes(axes[j])
 
     plt.tight_layout()
     plt.show()
 
-def plot_results_by_sample_size_per_excluded_class(coverage_results_all, accuracy_results_all, samples, limits):
+def plot_results_per_excluded_class(coverage_results_all, accuracy_results_all, samples, limits, reverse=False):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
 
@@ -413,16 +396,20 @@ def plot_results_by_sample_size_per_excluded_class(coverage_results_all, accurac
             ax.plot(limits, accuracies, linestyle='-', color=colors[class_idx])
             ax2.plot(limits, coverage, linestyle='--', color=colors[class_idx])
 
-        ax.set_xlabel('Distance Threshold')
-        ax.set_ylabel('Accuracy (%)')
+        ax.set_xlabel('Distance')
+        ax.set_ylabel('Accuracy (%) —')
         ax.tick_params(axis='y')
         ax.set_ylim(0, 100)
         ax.set_title(f'Sample Size: {sample_size}')
         ax.grid(True)
-
-        ax2.set_ylabel('Coverage (%)')
+    
+        ax2.set_ylabel('Coverage (%) --')
         ax2.tick_params(axis='y')
         ax2.set_ylim(0, 100)
+
+        if reverse:
+            ax.invert_xaxis()
+            ax.set_xlabel('Similarity')
 
     plt.tight_layout()
     plt.show()
