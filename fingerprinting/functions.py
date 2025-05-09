@@ -234,6 +234,43 @@ def extract_results_per_class(vectors, labels, train_indices, test_indices, dist
 
     return per_class_coverage_results, per_class_accuracy_results
 
+def extract_results_per_class_splits_avg(vectors, labels, train_test_splits, distance_type, metric, samples, limits):
+    per_class_coverage_results = {li: {sample: {} for sample in samples} for li in limits}
+    per_class_accuracy_results = {li: {sample: {} for sample in samples} for li in limits}
+
+    for train_indices, test_indices in train_test_splits:
+        for seed in range(40, 50):
+            for sample_size in samples:
+                for limit in limits:
+                    index, selected_indices = build_faiss_index(
+                        vectors, labels, train_indices, distance_type, sample_size, seed=seed
+                    )
+                    per_class_metrics = search_and_compare_labels_per_class(
+                        vectors, labels, test_indices, selected_indices, index, metric, limit
+                    )
+                    for label, metrics in per_class_metrics.items():
+                        if label not in per_class_coverage_results[limit][sample_size]:
+                            per_class_coverage_results[limit][sample_size][label] = []
+                            per_class_accuracy_results[limit][sample_size][label] = []
+
+                        per_class_coverage_results[limit][sample_size][label].append(metrics["coverage_percentage"])
+                        per_class_accuracy_results[limit][sample_size][label].append(metrics["match_percentage"])
+
+    averaged_coverage_results = {li: {sample: {} for sample in samples} for li in limits}
+    averaged_accuracy_results = {li: {sample: {} for sample in samples} for li in limits}
+
+    for limit in limits:
+        for sample_size in samples:
+            for label in per_class_coverage_results[limit][sample_size]:
+                averaged_coverage_results[limit][sample_size][label] = [
+                    np.mean(per_class_coverage_results[limit][sample_size][label])
+                ]
+                averaged_accuracy_results[limit][sample_size][label] = [
+                    np.mean(per_class_accuracy_results[limit][sample_size][label])
+                ]
+
+    return averaged_coverage_results, averaged_accuracy_results
+
 def extract_results_exclude(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits, num_classes=20):
     coverage_results_all = {}
     accuracy_results_all = {}
