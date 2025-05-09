@@ -348,7 +348,10 @@ def plot_results_per_class(per_class_coverage_results, per_class_accuracy_result
                 for distance in distances
             ]
 
-            ax.plot(distances, accuracy, label=f'Class {class_label} Accuracy', color=colors[class_idx])
+            filtered_distances = [d for d, c in zip(distances, coverage) if c > 0]
+            filtered_accuracy = [a for a, c in zip(accuracy, coverage) if c > 0]
+
+            ax.plot(filtered_distances, filtered_accuracy, label=f'Class {class_label} Accuracy', color=colors[class_idx])
             ax.set_xlabel('Distance')
             ax.set_ylabel('Accuracy (%) —')
             ax.tick_params(axis='y')
