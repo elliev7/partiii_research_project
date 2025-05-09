@@ -2,39 +2,11 @@
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.spatial.distance import cdist, pdist, squareform
 
 vectors_baseline = np.load('/home/ev357/tcbench/src/fingerprinting/artifacts-mirage19/baseline_vectors.npy')
 labels_baseline = np.load('/home/ev357/tcbench/src/fingerprinting/artifacts-mirage19/baseline_labels.npy')
 vectors_embeddings = np.load('/home/ev357/tcbench/src/fingerprinting/artifacts-mirage19/embeddings_vectors.npy')
 labels_embeddings = np.load('/home/ev357/tcbench/src/fingerprinting/artifacts-mirage19/embeddings_labels.npy')
-
-def calculate_within_class_distances(feature_matrix, true_labels, metric):
-    class_distances = {}
-    unique_labels = np.unique(true_labels)
-
-    for label in unique_labels:
-        class_indices = np.where(true_labels == label)[0]
-        class_features = feature_matrix[class_indices]
-        distances = squareform(pdist(class_features, metric))
-        class_distances[label] = distances
-
-    return class_distances
-
-def calculate_between_class_distances(feature_matrix, true_labels, metric):
-    class_distances = {}
-    unique_labels = np.unique(true_labels)
-
-    for label in unique_labels:
-        class_indices = np.where(true_labels == label)[0]
-        other_indices = np.where(true_labels != label)[0]
-        class_features = feature_matrix[class_indices]
-        other_features = feature_matrix[other_indices]
-        distances = cdist(class_features, other_features, metric)
-        class_distances[label] = distances
-
-    return class_distances
-
 
 def plot_distance_histograms(class_distances_1, class_distances_2, name):
     fig, axes = plt.subplots(4, 5, figsize=(20, 15))
