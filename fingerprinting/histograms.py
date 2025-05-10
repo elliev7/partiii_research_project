@@ -66,33 +66,6 @@ plot_distance_histograms(distances_within_embeddings_cosine, distances_between_e
 plot_distance_histograms(similarity_within_embeddings_cosine, similarity_between_embeddings_cosine, "distances_embeddings_cosine_similarity")
 
 
-def find_min_within(within_class_distances):
-    min_distances = {}
-    for label, distances in within_class_distances.items():
-        np.fill_diagonal(distances, np.inf)
-        min_distances[label] = np.min(distances, axis=1)
-    return min_distances
-
-def find_min_between(between_class_distances):
-    min_distances = {}
-    for label, distances in between_class_distances.items():
-        min_distances[label] = np.min(distances, axis=1)
-    return min_distances
-
-def find_max_within(within_class_distances):
-    max_distances = {}
-    for label, distances in within_class_distances.items():
-        distances = np.where(np.isinf(distances), np.nan, distances)
-        np.fill_diagonal(distances, np.nan)
-        max_distances[label] = np.nanmax(distances, axis=1)
-    return max_distances
-
-def find_max_between(between_class_distances):
-    max_distances = {}
-    for label, distances in between_class_distances.items():
-        distances = np.where(np.isinf(distances), np.nan, distances)
-        max_distances[label] = np.nanmax(distances, axis=1)
-    return max_distances
 
 def plot_min_histograms(min_within, min_between, name, xlim=1):
     fig, axes = plt.subplots(4, 5, figsize=(20, 15))
@@ -114,7 +87,6 @@ def plot_min_histograms(min_within, min_between, name, xlim=1):
     plt.tight_layout()
     plt.savefig(f"/home/ev357/tcbench/src/fingerprinting/plots/{name}.png")
 
-
 def plot_max_histograms(max_within, max_between, name, xlim=0):
     fig, axes = plt.subplots(4, 5, figsize=(20, 15))
     axes = axes.flatten()
@@ -134,14 +106,37 @@ def plot_max_histograms(max_within, max_between, name, xlim=0):
     plt.tight_layout()
     plt.savefig(f"/home/ev357/tcbench/src/fingerprinting/plots/{name}.png")
 
-min_within_baseline = find_min_within(distances_within_baseline)
-min_between_baseline = find_min_between(distances_between_baseline)
-min_within_embeddings = find_min_within(distances_within_embeddings)
-min_between_embeddings = find_min_between(distances_between_embeddings)
-min_within_embeddings_cosine = find_min_within(distances_within_embeddings_cosine)
-min_between_embeddings_cosine = find_min_between(distances_between_embeddings_cosine)
-max_within_embeddings_cosine_similarity = find_max_within(similarity_within_embeddings_cosine)
-max_between_embeddings_cosine_similarity = find_max_between(similarity_between_embeddings_cosine)
+within_class_file = "/home/ev357/rds/hpc-work/baseline_min_within.pkl"
+between_class_file = "/home/ev357/rds/hpc-work/baseline_min_between.pkl"
+
+with open(within_class_file, 'rb') as f:
+    min_within_baseline = pickle.load(f)
+with open(between_class_file, 'rb') as f:
+    min_between_baseline = pickle.load(f)
+
+within_class_file = "/home/ev357/rds/hpc-work/embeddings_min_within.npy"
+between_class_file = "/home/ev357/rds/hpc-work/embeddings_min_between.npy"
+
+with open(within_class_file, 'rb') as f:
+    min_within_embeddings = pickle.load(f)
+with open(between_class_file, 'rb') as f:
+    min_between_embeddings = pickle.load(f)
+
+within_class_file = "/home/ev357/rds/hpc-work/embeddings_cosine_min_within.npy"
+between_class_file = "/home/ev357/rds/hpc-work/embeddings_cosine_min_between.npy"
+
+with open(within_class_file, 'rb') as f:
+    min_within_embeddings_cosine = pickle.load(f)
+with open(between_class_file, 'rb') as f:
+    min_between_embeddings_cosine = pickle.load(f)
+
+within_class_file = "/home/ev357/rds/hpc-work/embeddings_cosine_similarity_max_within.npy"
+between_class_file = "/home/ev357/rds/hpc-work/embeddings_cosine_similarity_max_between.npy"
+
+with open(within_class_file, 'rb') as f:
+    max_within_embeddings_cosine_similarity = pickle.load(f)
+with open(between_class_file, 'rb') as f:
+    max_between_embeddings_cosine_similarity = pickle.load(f)
 
 plot_min_histograms(min_within_baseline, min_between_baseline, name="min_baseline")
 plot_min_histograms(min_within_embeddings, min_between_embeddings, "min_embeddings")
