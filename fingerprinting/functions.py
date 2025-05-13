@@ -57,7 +57,7 @@ def search_and_compare_labels(data, labels, test_indices, selected_indices, inde
     coverage = 0
     min_distances = []
 
-    for i in range(len(test_labels)):  
+    for i in range(len(test_indices)):  
         if metric == "distance":
             min_distances.append(np.sqrt(D[i,0]))
             if limit is not None and np.sqrt(D[i, 0]) > limit:
@@ -67,9 +67,9 @@ def search_and_compare_labels(data, labels, test_indices, selected_indices, inde
             if limit is not None and D[i, 0] < limit:
                 continue
         coverage += 1
-        matches += test_labels[i] in neighbor_labels[i, :1]
+        matches += test_labels[i] == neighbor_labels[i, 0]
 
-    coverage_percentage = (coverage / len(test_labels)) * 100
+    coverage_percentage = (coverage / len(test_indices)) * 100
     match_percentage = (matches / coverage) * 100 if coverage > 0 else 0
     return coverage_percentage, match_percentage, min_distances
 
@@ -88,7 +88,7 @@ def search_and_compare_labels_majority(data, labels, test_indices, selected_indi
     matches = 0
     coverage = 0
 
-    for i in range(len(test_labels)):  
+    for i in range(len(test_indices)):  
         if metric == "distance":
             distances = np.sqrt(D[i])
             valid_indices = distances <= limit if limit is not None else np.arange(len(distances))
@@ -114,7 +114,7 @@ def search_and_compare_labels_majority(data, labels, test_indices, selected_indi
         coverage += 1
         matches += (test_labels[i] == closest_label)
 
-    coverage_percentage = (coverage / len(test_labels)) * 100
+    coverage_percentage = (coverage / len(test_indices)) * 100
     match_percentage = (matches / coverage) * 100 if coverage > 0 else 0
     return coverage_percentage, match_percentage
 
@@ -133,17 +133,61 @@ def search_and_compare_labels_per_class(data, labels, test_indices, selected_ind
     unique_labels = np.unique(test_labels)
     per_class_results = {label: {"coverage": 0, "matches": 0, "total": 0} for label in unique_labels}
 
-    for i in range(len(test_labels)):
-        label = test_labels[i]
-        per_class_results[label]["total"] += 1
+    for i in range(len(test_indices)):
+        test_label = test_labels[i]
+        per_class_results[test_label]["total"] += 1
 
         if metric == "distance" and limit is not None and np.sqrt(D[i, 0]) > limit:
             continue
         if metric == "similarity" and limit is not None and D[i, 0] < limit:
             continue
 
-        per_class_results[label]["coverage"] += 1
-        per_class_results[label]["matches"] += test_labels[i] in neighbor_labels[i, :1]
+        per_class_results[test_label]["coverage"] += 1
+        per_class_results[test_label]["matches"] += test_label == neighbor_labels[i, 0]
+
+    per_class_metrics = {}
+    for label, results in per_class_results.items():
+        coverage = results["coverage"]
+        total = results["total"]
+        matches = results["matches"]
+
+        coverage_percentage = (coverage / total) * 100 if total > 0 else 0
+        match_percentage = (matches / coverage) * 100 if coverage > 0 else 0
+        per_class_metrics[label] = {
+            "coverage_percentage": coverage_percentage,
+            "match_percentage": match_percentage,
+        }
+
+    return per_class_metrics
+
+def search_and_compare_labels_limits_per_class(data, labels, test_indices, selected_indices, index, metric, class_limits):
+    k = 1
+    if metric == "distance":
+        D, I = index.search(data[test_indices], k)
+    elif metric == "similarity":
+        query_vectors = data[test_indices]
+        query_vectors = query_vectors / np.linalg.norm(query_vectors, axis=1, keepdims=True)
+        D, I = index.search(query_vectors, k)
+    
+    test_labels = labels[test_indices]
+    neighbor_labels = labels[selected_indices[I.flatten()]].reshape(I.shape)
+    
+    unique_labels = np.unique(test_labels)
+    per_class_results = {label: {"coverage": 0, "matches": 0, "total": 0} for label in unique_labels}
+
+    for i in range(len(test_labels)):
+        test_class = test_labels[i]
+        per_class_results[test_class]["total"] += 1
+
+        neighbor_class = neighbor_labels[i, 0]
+        limit = class_limits.get(neighbor_class, None)
+        if metric == "distance" and limit is not None and np.sqrt(D[i, 0]) > limit:
+            continue
+        if metric == "similarity" and limit is not None and D[i, 0] < limit:
+            continue
+
+        per_class_results[test_class]["coverage"] += 1
+        per_class_results[test_class]["matches"] += test_class == neighbor_class
 
     per_class_metrics = {}
     for label, results in per_class_results.items():
@@ -267,6 +311,67 @@ def extract_results_per_class_splits_avg(vectors, labels, train_test_splits, dis
                 ]
                 averaged_accuracy_results[limit][sample_size][label] = [
                     np.mean(per_class_accuracy_results[limit][sample_size][label])
+                ]
+
+    return averaged_coverage_results, averaged_accuracy_results
+
+def extract_results_limits_per_class(vectors, labels, train_indices, test_indices, distance_type, metric, samples, class_limits):
+    per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
+    per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
+
+    for percentile, limits in class_limits.items():
+        for sample_size in samples:
+            index, selected_indices = build_faiss_index(
+                vectors, labels, train_indices, distance_type, sample_size
+            )
+            per_class_metrics = search_and_compare_labels_limits_per_class(
+                vectors, labels, test_indices, selected_indices, index, metric, limits
+            )
+
+            for label, metrics in per_class_metrics.items():
+                if label not in per_class_coverage_results[percentile][sample_size]:
+                    per_class_coverage_results[percentile][sample_size][label] = []
+                    per_class_accuracy_results[percentile][sample_size][label] = []
+
+                per_class_coverage_results[percentile][sample_size][label].append(metrics["coverage_percentage"])
+                per_class_accuracy_results[percentile][sample_size][label].append(metrics["match_percentage"])
+
+    return per_class_coverage_results, per_class_accuracy_results
+
+def extract_results_limits_per_class_splits_avg(vectors, labels, train_test_splits, distance_type, metric, samples, class_limits):
+    per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
+    per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
+
+    for train_indices, test_indices in train_test_splits:
+        for seed in range(40, 50):
+            for sample_size in samples:
+                for percentile, limits in class_limits.items():
+                    index, selected_indices = build_faiss_index(
+                        vectors, labels, train_indices, distance_type, sample_size, seed=seed
+                    )
+                    per_class_metrics = search_and_compare_labels_limits_per_class(
+                        vectors, labels, test_indices, selected_indices, index, metric, limits
+                    )
+
+                    for label, metrics in per_class_metrics.items():
+                        if label not in per_class_coverage_results[percentile][sample_size]:
+                            per_class_coverage_results[percentile][sample_size][label] = []
+                            per_class_accuracy_results[percentile][sample_size][label] = []
+
+                        per_class_coverage_results[percentile][sample_size][label].append(metrics["coverage_percentage"])
+                        per_class_accuracy_results[percentile][sample_size][label].append(metrics["match_percentage"])
+
+    averaged_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
+    averaged_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
+
+    for percentile in class_limits.keys():
+        for sample_size in samples:
+            for label in per_class_coverage_results[percentile][sample_size]:
+                averaged_coverage_results[percentile][sample_size][label] = [
+                    np.mean(per_class_coverage_results[percentile][sample_size][label])
+                ]
+                averaged_accuracy_results[percentile][sample_size][label] = [
+                    np.mean(per_class_accuracy_results[percentile][sample_size][label])
                 ]
 
     return averaged_coverage_results, averaged_accuracy_results
@@ -397,6 +502,61 @@ def plot_results_per_class(per_class_coverage_results, per_class_accuracy_result
             ax.grid(True)
 
             ax2.plot(distances, coverage, label=f'Class {class_label} Coverage %', color=colors[class_idx], linestyle='--')
+        
+        ax2.set_ylabel('Coverage (%) --')
+        ax2.set_ylim(0, 100)
+        ax2.tick_params(axis='y')
+
+        if reverse:
+            ax.invert_xaxis()
+            ax.set_xlabel('Similarity')
+
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_results_limits_per_class(per_class_coverage_results, per_class_accuracy_results, samples, percentiles, reverse=False):
+    num_samples = len(samples)
+    fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
+    axes = axes.flatten() if num_samples > 1 else [axes]
+
+    unique_classes = set()
+    for limit_results in per_class_coverage_results.values():
+        for sample_results in limit_results.values():
+            unique_classes.update(sample_results.keys())
+    unique_classes = sorted(unique_classes)
+
+    color_map = {label: plt.cm.tab20(i / 20) for i, label in enumerate(range(20))}
+    colors = [color_map[label] for label in unique_classes]
+
+    for i, sample_size in enumerate(samples):
+        ax = axes[i]
+        ax2 = ax.twinx()
+
+        for class_idx, class_label in enumerate(unique_classes):
+            coverage = [
+                per_class_coverage_results[percentile][sample_size].get(class_label, [0])[0]
+                for percentile in percentiles
+            ]
+            accuracy = [
+                per_class_accuracy_results[percentile][sample_size].get(class_label, [0])[0]
+                for percentile in percentiles
+            ]
+
+            filtered_distances = [d for d, c in zip(percentiles, coverage) if c > 0]
+            filtered_accuracy = [a for a, c in zip(accuracy, coverage) if c > 0]
+
+            ax.plot(filtered_distances, filtered_accuracy, label=f'Class {class_label} Accuracy', color=colors[class_idx])
+            ax.set_xlabel('Percentile Limit')
+            ax.set_ylabel('Accuracy (%) —')
+            ax.tick_params(axis='y')
+            ax.set_ylim(0, 100)
+            ax.set_title(f'Sample Size: {sample_size}')
+            ax.grid(True)
+            
+            ax2.plot(percentiles, coverage, label=f'Class {class_label} Coverage %', color=colors[class_idx], linestyle='--')
         
         ax2.set_ylabel('Coverage (%) --')
         ax2.set_ylim(0, 100)
