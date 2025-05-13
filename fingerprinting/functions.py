@@ -161,7 +161,7 @@ def search_and_compare_labels_per_class(data, labels, test_indices, selected_ind
     return per_class_metrics
 
 def search_and_compare_labels_limits_per_class(data, labels, test_indices, selected_indices, index, metric, class_limits):
-    k = 1
+    k = 50
     if metric == "distance":
         D, I = index.search(data[test_indices], k)
     elif metric == "similarity":
@@ -173,7 +173,7 @@ def search_and_compare_labels_limits_per_class(data, labels, test_indices, selec
     neighbor_labels = labels[selected_indices[I.flatten()]].reshape(I.shape)
     
     unique_labels = np.unique(test_labels)
-    per_class_results = {label: {"coverage": 0, "matches": 0, "total": 0} for label in unique_labels}
+    per_class_results = {label: {"coverage": 0, "matches": 0, "total": 0, "missed": 0} for label in unique_labels}
 
     for i in range(len(test_labels)):
         test_class = test_labels[i]
@@ -181,9 +181,14 @@ def search_and_compare_labels_limits_per_class(data, labels, test_indices, selec
 
         neighbor_class = neighbor_labels[i, 0]
         limit = class_limits.get(neighbor_class, None)
+        true_limit = class_limits.get(test_class, None)
         if metric == "distance" and limit is not None and np.sqrt(D[i, 0]) > limit:
+            if np.sqrt(D[i, 0]) <= true_limit:
+                per_class_results[test_class]["missed"] += 1
             continue
         if metric == "similarity" and limit is not None and D[i, 0] < limit:
+            if D[i, 0] >= true_limit:
+                per_class_results[test_class]["missed"] += 1
             continue
 
         per_class_results[test_class]["coverage"] += 1
@@ -192,16 +197,19 @@ def search_and_compare_labels_limits_per_class(data, labels, test_indices, selec
     per_class_metrics = {}
     for label, results in per_class_results.items():
         coverage = results["coverage"]
+        missed = results["missed"]
         total = results["total"]
         matches = results["matches"]
 
         coverage_percentage = (coverage / total) * 100 if total > 0 else 0
+        missed_percentage = (missed / total) * 100 if total > 0 else 0
         match_percentage = (matches / coverage) * 100 if coverage > 0 else 0
         per_class_metrics[label] = {
             "coverage_percentage": coverage_percentage,
+            "missed_percentage": missed_percentage,
             "match_percentage": match_percentage,
         }
-
+    
     return per_class_metrics
 
 def extract_results(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits, exclude_class=None):
@@ -318,6 +326,7 @@ def extract_results_per_class_splits_avg(vectors, labels, train_test_splits, dis
 def extract_results_limits_per_class(vectors, labels, train_indices, test_indices, distance_type, metric, samples, class_limits):
     per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
     per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
+    per_class_missed_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
 
     for percentile, limits in class_limits.items():
         for sample_size in samples:
@@ -332,15 +341,18 @@ def extract_results_limits_per_class(vectors, labels, train_indices, test_indice
                 if label not in per_class_coverage_results[percentile][sample_size]:
                     per_class_coverage_results[percentile][sample_size][label] = []
                     per_class_accuracy_results[percentile][sample_size][label] = []
+                    per_class_missed_results[percentile][sample_size][label] = []   
 
                 per_class_coverage_results[percentile][sample_size][label].append(metrics["coverage_percentage"])
                 per_class_accuracy_results[percentile][sample_size][label].append(metrics["match_percentage"])
+                per_class_missed_results[percentile][sample_size][label].append(metrics["missed_percentage"])
 
-    return per_class_coverage_results, per_class_accuracy_results
+    return per_class_coverage_results, per_class_accuracy_results, per_class_missed_results
 
 def extract_results_limits_per_class_splits_avg(vectors, labels, train_test_splits, distance_type, metric, samples, class_limits):
     per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
     per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
+    per_class_missed_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
 
     for train_indices, test_indices in train_test_splits:
         for seed in range(40, 50):
@@ -357,12 +369,15 @@ def extract_results_limits_per_class_splits_avg(vectors, labels, train_test_spli
                         if label not in per_class_coverage_results[percentile][sample_size]:
                             per_class_coverage_results[percentile][sample_size][label] = []
                             per_class_accuracy_results[percentile][sample_size][label] = []
+                            per_class_missed_results[percentile][sample_size][label] = []  
 
                         per_class_coverage_results[percentile][sample_size][label].append(metrics["coverage_percentage"])
                         per_class_accuracy_results[percentile][sample_size][label].append(metrics["match_percentage"])
+                        per_class_missed_results[percentile][sample_size][label].append(metrics["missed_percentage"])
 
     averaged_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
     averaged_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
+    averaged_missed_results = {percentile: {sample: {} for sample in samples} for percentile in class_limits.keys()}
 
     for percentile in class_limits.keys():
         for sample_size in samples:
@@ -373,8 +388,11 @@ def extract_results_limits_per_class_splits_avg(vectors, labels, train_test_spli
                 averaged_accuracy_results[percentile][sample_size][label] = [
                     np.mean(per_class_accuracy_results[percentile][sample_size][label])
                 ]
+                averaged_missed_results[percentile][sample_size][label] = [
+                    np.mean(per_class_missed_results[percentile][sample_size][label])
+                ]
 
-    return averaged_coverage_results, averaged_accuracy_results
+    return averaged_coverage_results, averaged_accuracy_results, averaged_missed_results
 
 def extract_results_exclude(vectors, labels, train_indices, test_indices, distance_type, metric, samples, limits, num_classes=20):
     coverage_results_all = {}
@@ -517,7 +535,7 @@ def plot_results_per_class(per_class_coverage_results, per_class_accuracy_result
     plt.tight_layout()
     plt.show()
 
-def plot_results_limits_per_class(per_class_coverage_results, per_class_accuracy_results, samples, percentiles, reverse=False):
+def plot_results_limits_per_class(per_class_coverage_results, per_class_accuracy_results, per_class_missed_results, samples, percentiles, reverse=False):
     num_samples = len(samples)
     fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
     axes = axes.flatten() if num_samples > 1 else [axes]
@@ -544,6 +562,10 @@ def plot_results_limits_per_class(per_class_coverage_results, per_class_accuracy
                 per_class_accuracy_results[percentile][sample_size].get(class_label, [0])[0]
                 for percentile in percentiles
             ]
+            missed = [
+                per_class_missed_results[percentile][sample_size].get(class_label, [0])[0]
+                for percentile in percentiles
+            ]
 
             filtered_distances = [d for d, c in zip(percentiles, coverage) if c > 0]
             filtered_accuracy = [a for a, c in zip(accuracy, coverage) if c > 0]
@@ -557,6 +579,7 @@ def plot_results_limits_per_class(per_class_coverage_results, per_class_accuracy
             ax.grid(True)
             
             ax2.plot(percentiles, coverage, label=f'Class {class_label} Coverage %', color=colors[class_idx], linestyle='--')
+            ax2.plot(percentiles, missed, label=f'Class {class_label} Missed %', color=colors[class_idx], linestyle=':')
         
         ax2.set_ylabel('Coverage (%) --')
         ax2.set_ylim(0, 100)
