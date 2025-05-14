@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import faiss
 
-def build_faiss_index(data, labels, train_indices, distance_type, samples_per_class=None, exclude_class=None, seed=42):
+def build_faiss(data, labels, train_indices, distance_type, samples_per_class=None, exclude_class=None, seed=42):
     selected_indices = select_indices_by_class(
         labels, train_indices, samples_per_class, exclude_class=exclude_class, seed=seed
     )
@@ -39,7 +39,7 @@ def select_indices_by_class(labels, train_indices, samples_per_class, exclude_cl
         selected_indices.extend(train_indices[selected_label_indices])
     return np.array(selected_indices)
 
-def search_and_compare_labels(data, labels, test_indices, selected_indices, index, metric, limit=None):
+def search_faiss(data, labels, test_indices, selected_indices, index, metric, limit=None):
     k = 1
     if metric == "distance":
         D, I = index.search(data[test_indices], k)
@@ -71,7 +71,7 @@ def search_and_compare_labels(data, labels, test_indices, selected_indices, inde
     match_percentage = (matches / coverage) * 100 if coverage > 0 else 0
     return coverage_percentage, match_percentage, min_distances
 
-def search_and_compare_labels_majority(data, labels, test_indices, selected_indices, index, metric, limit=None):
+def search_faiss_majority(data, labels, test_indices, selected_indices, index, metric, limit=None):
     k = 10
     if metric == "distance":
         D, I = index.search(data[test_indices], k)
@@ -116,7 +116,7 @@ def search_and_compare_labels_majority(data, labels, test_indices, selected_indi
     match_percentage = (matches / coverage) * 100 if coverage > 0 else 0
     return coverage_percentage, match_percentage
 
-def search_and_compare_labels_per_class(data, labels, test_indices, selected_indices, index, metric, limit=None):
+def search_faiss_per_class(data, labels, test_indices, selected_indices, index, metric, limit=None):
     k = 1
     if metric == "distance":
         D, I = index.search(data[test_indices], k)
@@ -162,7 +162,7 @@ def search_and_compare_labels_per_class(data, labels, test_indices, selected_ind
 
     return per_class_metrics
 
-def search_and_compare_labels_limits_per_class(data, labels, test_indices, selected_indices, index, metric, class_limits):
+def search_faiss_limits_per_class(data, labels, test_indices, selected_indices, index, metric, class_limits):
     if metric == "distance":
         max_limit = max(class_limits.values())
         lims, D, I = index.range_search(data[test_indices], max_limit**2)
@@ -319,10 +319,10 @@ def extract_results(vectors, labels, train_indices, test_indices, distance_type,
 
     for limit in limits:
         for sample_size in samples:
-            index, selected_indices = build_faiss_index(
+            index, selected_indices = build_faiss(
                 vectors, labels, train_indices, distance_type, sample_size, exclude_class=exclude_class
             )
-            coverage, accuracy, min_distances = search_and_compare_labels(
+            coverage, accuracy, min_distances = search_faiss(
                 vectors, labels, test_indices, selected_indices, index, metric, limit
             )
             coverage_results[limit].append(coverage)
@@ -335,10 +335,10 @@ def extract_results_majority(vectors, labels, train_indices, test_indices, dista
 
     for limit in limits:
         for sample_size in samples:
-            index, selected_indices = build_faiss_index(
+            index, selected_indices = build_faiss(
                 vectors, labels, train_indices, distance_type, sample_size
             )
-            coverage, accuracy = search_and_compare_labels_majority(
+            coverage, accuracy = search_faiss_majority(
                 vectors, labels, test_indices, selected_indices, index, metric, limit
             )
             coverage_results[limit].append(coverage)
@@ -353,10 +353,10 @@ def extract_results_splits(vectors, labels, train_test_splits, distance_type, me
         for seed in range(40, 50):
             for sample_size in samples:
                 for limit in limits:
-                    index, selected_indices = build_faiss_index(
+                    index, selected_indices = build_faiss(
                         vectors, labels, train_indices, distance_type, sample_size, seed=seed
                     )
-                    coverage, accuracy, _ = search_and_compare_labels(
+                    coverage, accuracy, _ = search_faiss(
                         vectors, labels, test_indices, selected_indices, index, metric, limit
                     )
                     accuracy_results[sample_size][limit].append(accuracy)
@@ -370,10 +370,10 @@ def extract_results_per_class(vectors, labels, train_indices, test_indices, dist
 
     for limit in limits:
         for sample_size in samples:
-            index, selected_indices = build_faiss_index(
+            index, selected_indices = build_faiss(
                 vectors, labels, train_indices, distance_type, sample_size
             )
-            per_class_metrics = search_and_compare_labels_per_class(
+            per_class_metrics = search_faiss_per_class(
                 vectors, labels, test_indices, selected_indices, index, metric, limit
             )
 
@@ -395,10 +395,10 @@ def extract_results_per_class_splits_avg(vectors, labels, train_test_splits, dis
         for seed in range(40, 50):
             for sample_size in samples:
                 for limit in limits:
-                    index, selected_indices = build_faiss_index(
+                    index, selected_indices = build_faiss(
                         vectors, labels, train_indices, distance_type, sample_size, seed=seed
                     )
-                    per_class_metrics = search_and_compare_labels_per_class(
+                    per_class_metrics = search_faiss_per_class(
                         vectors, labels, test_indices, selected_indices, index, metric, limit
                     )
                     for label, metrics in per_class_metrics.items():
@@ -434,10 +434,10 @@ def extract_results_limits_per_class(vectors, labels, train_indices, test_indice
             vectors, labels, train_indices, distance_type, sample_size, percentiles
         )
         for percentile, limits in class_limits.items():
-            index, selected_indices = build_faiss_index(
+            index, selected_indices = build_faiss(
                 vectors, labels, train_indices, distance_type, sample_size
             )
-            per_class_metrics = search_and_compare_labels_limits_per_class(
+            per_class_metrics = search_faiss_limits_per_class(
                 vectors, labels, test_indices, selected_indices, index, metric, limits
             )
 
@@ -465,10 +465,10 @@ def extract_results_limits_per_class_splits_avg(vectors, labels, train_test_spli
                     vectors, labels, train_indices, distance_type, sample_size, percentiles
                 )
                 for percentile, limits in class_limits.items():
-                    index, selected_indices = build_faiss_index(
+                    index, selected_indices = build_faiss(
                         vectors, labels, train_indices, distance_type, sample_size, seed=seed
                     )
-                    per_class_metrics = search_and_compare_labels_limits_per_class(
+                    per_class_metrics = search_faiss_limits_per_class(
                         vectors, labels, test_indices, selected_indices, index, metric, limits
                     )
 
