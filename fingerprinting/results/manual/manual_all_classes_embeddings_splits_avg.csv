@@ -1,0 +1,43 @@
+,Distance_0.1,Distance_0.25,Distance_0.5,Distance_0.75,Distance_1,Distance_1.25,Distance_1.5,Distance_1.75,Distance_2,Distance_2.25,Distance_2.5,Distance_2.75,Distance_3
+Sample_10,"Cov: 3.15%
+Acc: 92.89%","Cov: 4.41%
+Acc: 92.35%","Cov: 5.92%
+Acc: 91.88%","Cov: 6.56%
+Acc: 90.34%","Cov: 8.23%
+Acc: 87.82%","Cov: 10.69%
+Acc: 82.76%","Cov: 15.88%
+Acc: 78.00%","Cov: 24.14%
+Acc: 70.51%","Cov: 35.83%
+Acc: 62.92%","Cov: 50.20%
+Acc: 58.16%","Cov: 65.33%
+Acc: 56.16%","Cov: 78.30%
+Acc: 55.77%","Cov: 87.26%
+Acc: 55.87%"
+Sample_100,"Cov: 10.23%
+Acc: 86.81%","Cov: 12.23%
+Acc: 85.20%","Cov: 14.86%
+Acc: 84.66%","Cov: 17.09%
+Acc: 83.48%","Cov: 20.56%
+Acc: 81.88%","Cov: 26.95%
+Acc: 80.12%","Cov: 36.84%
+Acc: 76.45%","Cov: 49.06%
+Acc: 71.93%","Cov: 62.69%
+Acc: 68.85%","Cov: 75.97%
+Acc: 67.23%","Cov: 86.48%
+Acc: 66.80%","Cov: 93.09%
+Acc: 66.78%","Cov: 96.69%
+Acc: 66.84%"
+Sample_1000,"Cov: 23.34%
+Acc: 85.92%","Cov: 25.88%
+Acc: 85.46%","Cov: 31.11%
+Acc: 85.96%","Cov: 35.51%
+Acc: 85.80%","Cov: 41.39%
+Acc: 84.95%","Cov: 50.06%
+Acc: 83.18%","Cov: 60.94%
+Acc: 80.66%","Cov: 72.02%
+Acc: 78.76%","Cov: 82.42%
+Acc: 77.35%","Cov: 90.72%
+Acc: 76.62%","Cov: 95.89%
+Acc: 76.34%","Cov: 98.37%
+Acc: 76.24%","Cov: 99.40%
+Acc: 76.18%"

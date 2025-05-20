@@ -26,7 +26,7 @@ def plot_distance_histograms(class_distances_1, class_distances_2, name):
         ax.legend()
 
     plt.tight_layout()
-    plt.savefig(f"/home/ev357/tcbench/src/fingerprinting/plots/{name}.png")
+    plt.savefig(f"/home/ev357/tcbench/src/fingerprinting/histograms/{name}.png")
 
 within_class_file = "/home/ev357/rds/hpc-work/baseline_within.pkl"
 between_class_file = "/home/ev357/rds/hpc-work/baseline_between.pkl"

@@ -1,0 +1,61 @@
+,Similarity_0.9,Similarity_0.91,Similarity_0.92,Similarity_0.93,Similarity_0.94,Similarity_0.95,Similarity_0.96,Similarity_0.97,Similarity_0.98,Similarity_0.99,Similarity_0.991,Similarity_0.992,Similarity_0.993,Similarity_0.994,Similarity_0.995,Similarity_0.996,Similarity_0.997,Similarity_0.998,Similarity_0.999
+Sample_10,"Cov: 67.23%
+Acc: 72.17%","Cov: 54.19%
+Acc: 76.77%","Cov: 41.89%
+Acc: 81.89%","Cov: 32.00%
+Acc: 86.25%","Cov: 24.79%
+Acc: 89.08%","Cov: 19.22%
+Acc: 90.55%","Cov: 14.90%
+Acc: 91.44%","Cov: 11.05%
+Acc: 91.68%","Cov: 8.51%
+Acc: 92.33%","Cov: 6.48%
+Acc: 92.66%","Cov: 6.36%
+Acc: 92.90%","Cov: 6.24%
+Acc: 93.22%","Cov: 6.16%
+Acc: 93.34%","Cov: 5.99%
+Acc: 93.38%","Cov: 5.85%
+Acc: 93.65%","Cov: 5.68%
+Acc: 93.87%","Cov: 5.53%
+Acc: 94.16%","Cov: 4.64%
+Acc: 93.34%","Cov: 4.11%
+Acc: 93.97%"
+Sample_100,"Cov: 95.44%
+Acc: 72.01%","Cov: 89.82%
+Acc: 74.10%","Cov: 80.98%
+Acc: 77.13%","Cov: 69.71%
+Acc: 80.55%","Cov: 57.96%
+Acc: 83.67%","Cov: 47.51%
+Acc: 85.65%","Cov: 38.26%
+Acc: 86.55%","Cov: 29.97%
+Acc: 86.80%","Cov: 22.70%
+Acc: 86.34%","Cov: 17.28%
+Acc: 86.33%","Cov: 16.82%
+Acc: 86.43%","Cov: 16.39%
+Acc: 86.37%","Cov: 15.97%
+Acc: 86.33%","Cov: 15.53%
+Acc: 86.33%","Cov: 15.01%
+Acc: 86.45%","Cov: 14.47%
+Acc: 86.59%","Cov: 13.85%
+Acc: 86.92%","Cov: 13.14%
+Acc: 86.84%","Cov: 11.49%
+Acc: 87.32%"
+Sample_1000,"Cov: 99.79%
+Acc: 77.78%","Cov: 99.11%
+Acc: 78.13%","Cov: 97.09%
+Acc: 79.11%","Cov: 92.77%
+Acc: 80.96%","Cov: 85.73%
+Acc: 83.36%","Cov: 76.72%
+Acc: 85.73%","Cov: 67.10%
+Acc: 87.21%","Cov: 56.86%
+Acc: 87.84%","Cov: 46.57%
+Acc: 87.87%","Cov: 36.91%
+Acc: 87.32%","Cov: 36.00%
+Acc: 87.26%","Cov: 35.11%
+Acc: 87.19%","Cov: 34.17%
+Acc: 87.07%","Cov: 33.26%
+Acc: 87.03%","Cov: 32.28%
+Acc: 86.94%","Cov: 31.10%
+Acc: 86.84%","Cov: 29.80%
+Acc: 86.73%","Cov: 28.13%
+Acc: 86.59%","Cov: 25.44%
+Acc: 86.36%"
