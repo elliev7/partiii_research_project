@@ -460,7 +460,7 @@ def search_faiss_limits_per_class_extended(data_type, selected_indices, index, m
     
     return per_class_metrics
 
-def calculate_limits(data_type, distance_type, samples_per_class, percentiles, seed=42, train_indices=None):
+def calculate_limits(data_type, distance_type, samples_per_class, percentiles, train_indices=None, seed=42,):
     if data_type == 'baseline':
         data = vectors_baseline
         labels = labels_baseline
@@ -515,7 +515,7 @@ def calculate_limits(data_type, distance_type, samples_per_class, percentiles, s
         limits_per_percentile[percentile] = limit
     return limits_per_percentile
 
-def calculate_limits_per_class(data_type, distance_type, samples_per_class, percentiles, seed=42):
+def calculate_limits_per_class(data_type, distance_type, samples_per_class, percentiles, train_indices=None, seed=42):
     if data_type == 'baseline':
         data = vectors_baseline
         labels = labels_baseline
@@ -523,9 +523,13 @@ def calculate_limits_per_class(data_type, distance_type, samples_per_class, perc
         data = vectors_embeddings
         labels = labels_embeddings
 
-    selected_indices = select_indices_by_class(
-        data_type, samples_per_class, exclude_class=None, seed=seed 
-    )
+    if train_indices is not None:
+        selected_indices = np.array(train_indices)
+    else:
+        selected_indices = select_indices_by_class(
+            data_type, samples_per_class, exclude_class=None, seed=seed 
+        )
+
     selected_labels = labels[selected_indices]
     unique_labels = np.unique(selected_labels)
     class_nn_distances = {}
@@ -1224,6 +1228,7 @@ def semi_supervised(data_type, distance_type, metric, starting_samples_per_class
     all_indices = np.arange(len(labels))
     labeled_indices = select_indices_by_class(data_type, starting_samples_per_class, seed=seed)
     labeled_labels = labels[labeled_indices].copy()
+    original_labeled_indices = set(labeled_indices)
     unlabeled_indices = set(all_indices) - set(labeled_indices)
 
     batch_accuracies = []
@@ -1237,14 +1242,7 @@ def semi_supervised(data_type, distance_type, metric, starting_samples_per_class
     batch_correct_training_points.append(correct_training_points)
 
     while unlabeled_indices:
-        limits = calculate_limits(
-            data_type, distance_type, None, [high_confidence_percentile, low_confidence_percentile], seed=seed, train_indices=labeled_indices
-        )
-        high_confidence_threshold = limits[high_confidence_percentile]
-        low_confidence_threshold = limits[low_confidence_percentile]
-
         index, _ = build_faiss(data_type, distance_type, seed=seed, train_indices=labeled_indices)
-        
         batch_indices = select_next_batch(unlabeled_indices, batch_size=batch_size, seed=seed)
         batch_vectors = data[batch_indices]
         if metric == 'distance':
@@ -1257,13 +1255,21 @@ def semi_supervised(data_type, distance_type, metric, starting_samples_per_class
         batch_true_labels = []
         covered = []
 
+        limits = calculate_limits(
+            data_type, distance_type, None, [high_confidence_percentile, low_confidence_percentile], train_indices=labeled_indices, seed=seed
+        )
+        high_confidence_threshold = limits[high_confidence_percentile]
+        low_confidence_threshold = limits[low_confidence_percentile]
+
         for i, (idx, dist, nn_idx) in enumerate(zip(batch_indices, D, I)):
             nn_label = labeled_labels[nn_idx[0]]
             true_label = labels[idx]
+            nn_global_idx = labeled_indices[nn_idx[0]]
+
             if metric == 'distance':
                 dist = np.sqrt(dist)
                 if dist < high_confidence_threshold:
-                    if not np.isclose(dist, 0):
+                    if not np.isclose(dist, 0) and nn_global_idx in original_labeled_indices:
                         labeled_indices = np.append(labeled_indices, idx)
                         labeled_labels = np.append(labeled_labels, nn_label)
                         training_points += 1
@@ -1280,7 +1286,7 @@ def semi_supervised(data_type, distance_type, metric, starting_samples_per_class
                     covered.append(False)
             elif metric == 'similarity':
                 if dist > high_confidence_threshold:
-                    if not np.isclose(dist, 1.0):
+                    if not np.isclose(dist, 1.0) and nn_global_idx in original_labeled_indices:
                         labeled_indices = np.append(labeled_indices, idx)
                         labeled_labels = np.append(labeled_labels, nn_label)
                         training_points += 1
@@ -1325,6 +1331,7 @@ def semi_supervised_per_class(data_type, distance_type, metric, starting_samples
     all_indices = np.arange(len(labels))
     labeled_indices = list(select_indices_by_class(data_type, starting_samples_per_class, seed=seed))
     labeled_labels = labels[labeled_indices].copy()
+    original_labeled_indices = set(labeled_indices)
     unlabeled_indices = set(all_indices) - set(labeled_indices)
 
     per_class_accuracies = {}
@@ -1344,14 +1351,14 @@ def semi_supervised_per_class(data_type, distance_type, metric, starting_samples
     batch_training_points.append(training_points)
     batch_correct_training_points.append(correct_training_points)
 
-    while unlabeled_indices:
-        class_limits = calculate_limits_per_class(
-            data_type, distance_type, starting_samples_per_class, 
-            [high_confidence_percentile, low_confidence_percentile], seed=seed
-        )
-        high_confidence_limits = class_limits[high_confidence_percentile]
-        low_confidence_limits = class_limits[low_confidence_percentile]
+    class_limits = calculate_limits_per_class(
+        data_type, distance_type, starting_samples_per_class, [high_confidence_percentile, low_confidence_percentile], train_indices=labeled_indices, seed=seed
+    )
+    
+    high_confidence_limits = class_limits[high_confidence_percentile]
+    low_confidence_limits = class_limits[low_confidence_percentile]
 
+    while unlabeled_indices:
         index, _ = build_faiss(data_type, distance_type, seed=seed, train_indices=labeled_indices)
         batch_indices = select_next_batch(unlabeled_indices, batch_size=batch_size, seed=seed)
         if metric == 'distance':
@@ -1372,12 +1379,14 @@ def semi_supervised_per_class(data_type, distance_type, metric, starting_samples
         for idx, dist, nn_idx in zip(batch_indices, D, I):
             nn_label = labeled_labels[nn_idx[0]]
             true_label = labels[idx]
+            nn_global_idx = labeled_indices[nn_idx[0]]
+
             if metric == 'distance':
                 dist = np.sqrt(dist)
                 high_thr = high_confidence_limits[nn_label]
                 low_thr = low_confidence_limits[nn_label]
                 if dist < high_thr:
-                    if not np.isclose(dist, 0):
+                    if not np.isclose(dist, 0) and nn_global_idx in original_labeled_indices:
                         labeled_indices = np.append(labeled_indices, idx)
                         labeled_labels = np.append(labeled_labels, nn_label)
                         training_points += 1
@@ -1396,7 +1405,7 @@ def semi_supervised_per_class(data_type, distance_type, metric, starting_samples
                 high_thr = high_confidence_limits[nn_label]
                 low_thr = low_confidence_limits[nn_label]
                 if dist > high_thr:
-                    if not np.isclose(dist, 1.0):
+                    if not np.isclose(dist, 1.0) and nn_global_idx in original_labeled_indices:
                         labeled_indices = np.append(labeled_indices, idx)
                         labeled_labels = np.append(labeled_labels, nn_label)
                         training_points += 1
