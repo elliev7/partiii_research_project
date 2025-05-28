@@ -7,7 +7,6 @@ labels_baseline = np.load('/home/ev357/tcbench/src/fingerprinting/mirage19/basel
 vectors_embeddings = np.load('/home/ev357/tcbench/src/fingerprinting/mirage19/embeddings_vectors.npy')
 labels_embeddings = np.load('/home/ev357/tcbench/src/fingerprinting/mirage19/embeddings_labels.npy')
 
-
 def build_faiss(data_type, distance_type, samples_per_class=None, exclude_class=None, seed=42, train_indices=None):
     if data_type == 'baseline':
         data = vectors_baseline
@@ -85,6 +84,8 @@ def search_faiss(data_type, selected_indices, index, metric, limit=None):
     matches = 0
     coverage = 0
     min_distances = []
+    preds = []
+    trues = []
 
     for i in range(len(test_indices)):  
         if metric == "distance":
@@ -97,10 +98,13 @@ def search_faiss(data_type, selected_indices, index, metric, limit=None):
                 continue
         coverage += 1
         matches += test_labels[i] == neighbor_labels[i, 0]
+        preds.append(neighbor_labels[i, 0])
+        trues.append(test_labels[i])
 
     coverage_percentage = (coverage / len(test_indices)) * 100
     match_percentage = (matches / coverage) * 100 if coverage > 0 else 0
-    return coverage_percentage, match_percentage, min_distances
+
+    return coverage_percentage, match_percentage, min_distances, preds, trues
 
 def search_faiss_majority(data_type, selected_indices, index, metric, limit=None):
     if data_type == 'baseline':
@@ -223,6 +227,12 @@ def search_faiss_limits_per_class(data_type, selected_indices, index, metric, cl
     
     all_indices = np.arange(len(labels))
     test_indices = np.setdiff1d(all_indices, selected_indices)
+
+    unique_labels = np.unique(labels)
+    per_class_preds = {label: [] for label in unique_labels}
+    per_class_trues = {label: [] for label in unique_labels}
+    per_class_preds[-1] = []
+    per_class_trues[-1] = []
     
     if metric == "distance":
         max_limit = max(class_limits.values())
@@ -290,9 +300,14 @@ def search_faiss_limits_per_class(data_type, selected_indices, index, metric, cl
             if np.sqrt(nn_distance) <= nn_limit:
                 per_class_results[test_class]["coverage"] += 1
                 per_class_results[-1]["coverage"] += 1
+                per_class_preds[test_class].append(nn_class)
+                per_class_trues[test_class].append(test_class)
+                per_class_preds[-1].append(nn_class)
+                per_class_trues[-1].append(test_class)
                 if nn_class == test_class:
                     per_class_results[test_class]["matches"] += 1
                     per_class_results[-1]["matches"] += 1
+
             else:
                 for dist, n_class in zip(neighbors_distances[1:], neighbors_classes[1:]):
                     if n_class == test_class and np.sqrt(dist) <= test_class_limit:
@@ -304,9 +319,14 @@ def search_faiss_limits_per_class(data_type, selected_indices, index, metric, cl
             if nn_distance >= nn_limit:
                 per_class_results[test_class]["coverage"] += 1
                 per_class_results[-1]["coverage"] += 1
+                per_class_preds[test_class].append(nn_class)
+                per_class_trues[test_class].append(test_class)
+                per_class_preds[-1].append(nn_class)
+                per_class_trues[-1].append(test_class)
                 if nn_class == test_class:
                     per_class_results[test_class]["matches"] += 1
                     per_class_results[-1]["matches"] += 1
+
             else:
                 for sim, n_class in zip(neighbors_distances[1:], neighbors_classes[1:]):
                     if n_class == test_class and sim >= test_class_limit:
@@ -330,61 +350,48 @@ def search_faiss_limits_per_class(data_type, selected_indices, index, metric, cl
             "match_percentage": match_percentage,
         }
     
-    return per_class_metrics
+    return per_class_metrics, per_class_preds, per_class_trues
 
-def search_faiss_limits_per_class_extended(data_type, selected_indices, index, metric, class_limits):
+def search_faiss_limits_per_class_iterative(data_type, selected_indices, index, metric, class_limits):
     if data_type == 'baseline':
         data = vectors_baseline
         labels = labels_baseline
     elif data_type == 'embeddings':
         data = vectors_embeddings
         labels = labels_embeddings
-    
+
     all_indices = np.arange(len(labels))
     test_indices = np.setdiff1d(all_indices, selected_indices)
-    
+
     if metric == "distance":
         max_limit = max(class_limits.values())
         lims, D, I = index.range_search(data[test_indices], max_limit**2)
-
-        sorted_D = np.zeros_like(D)
-        sorted_I = np.zeros_like(I)
-
-        for i in range(len(lims) - 1):
-            start, end = lims[i], lims[i + 1]
-            distances = D[start:end]
-            indices = I[start:end]
-            sorted_order = np.argsort(distances)
-            
-            sorted_D[start:end] = distances[sorted_order]
-            sorted_I[start:end] = indices[sorted_order]
-
     elif metric == "similarity":
         min_limit = min(class_limits.values())
         query_vectors = data[test_indices]
         query_vectors = query_vectors / np.linalg.norm(query_vectors, axis=1, keepdims=True)
         lims, D, I = index.range_search(query_vectors, min_limit)
 
-        sorted_D = np.zeros_like(D)
-        sorted_I = np.zeros_like(I)
-        sorted_labels = []
+    sorted_D = np.zeros_like(D)
+    sorted_I = np.zeros_like(I)
 
-        for i in range(len(lims) - 1):
-            start, end = lims[i], lims[i + 1]
-            distances = D[start:end]
-            indices = I[start:end]
-            
-            sorted_order = np.argsort(distances)[::-1]
-            
-            sorted_D[start:end] = distances[sorted_order]
-            sorted_I[start:end] = indices[sorted_order]
-            
-            sorted_labels.append(labels[sorted_I[start:end]])
-    
-    test_labels = labels[test_indices]    
+    for i in range(len(lims) - 1):
+        start, end = lims[i], lims[i + 1]
+        distances = D[start:end]
+        indices = I[start:end]
+        sorted_order = np.argsort(distances) if metric == "distance" else np.argsort(distances)[::-1]
+        sorted_D[start:end] = distances[sorted_order]
+        sorted_I[start:end] = indices[sorted_order]
+
+    test_labels = labels[test_indices]
     unique_labels = np.unique(test_labels)
     per_class_results = {label: {"coverage": 0, "matches": 0, "total": 0} for label in unique_labels}
     per_class_results[-1] = {"coverage": 0, "matches": 0, "total": 0}
+
+    per_class_preds = {label: [] for label in unique_labels}
+    per_class_trues = {label: [] for label in unique_labels}
+    per_class_preds[-1] = []
+    per_class_trues[-1] = []
 
     for i in range(len(test_labels)):
         test_class = test_labels[i]
@@ -395,55 +402,40 @@ def search_faiss_limits_per_class_extended(data_type, selected_indices, index, m
         neighbors_distances = sorted_D[start:end]
         neighbors_indices = sorted_I[start:end]
         neighbors_classes = labels[selected_indices[sorted_I[start:end]]]
-        
+
         if len(neighbors_distances) == 0:
             continue
 
-        if metric == "distance":
-            dists = neighbors_distances
-            idxs = neighbors_indices
-            classes = neighbors_classes
+        dists_or_sims = neighbors_distances
+        classes = neighbors_classes
 
-            while len(dists) > 0:
-                nn_distance = dists[0]
-                nn_class = classes[0]  
-                nn_limit = class_limits.get(nn_class, None)
+        while len(dists_or_sims) > 0:
+            score = dists_or_sims[0]
+            nn_class = classes[0]
+            nn_limit = class_limits.get(nn_class, None)
 
-                if np.sqrt(nn_distance) <= nn_limit:
-                    per_class_results[test_class]["coverage"] += 1
-                    per_class_results[-1]["coverage"] += 1
-                    if nn_class == test_class:
-                        per_class_results[test_class]["matches"] += 1
-                        per_class_results[-1]["matches"] += 1
-                    break
-                else:
-                    mask = classes != nn_class
-                    dists = dists[mask]
-                    idxs = idxs[mask]
-                    classes = classes[mask]
-               
-        elif metric == "similarity":
-            sims = neighbors_distances
-            idxs = neighbors_indices
-            classes = neighbors_classes
+            match_condition = (
+                (metric == "distance" and np.sqrt(score) <= nn_limit) or
+                (metric == "similarity" and score >= nn_limit)
+            )
 
-            while len(sims) > 0:
-                nn_similarity = sims[0]
-                nn_class = classes[0]  
-                nn_limit = class_limits.get(nn_class, None)
+            if match_condition:
+                per_class_results[test_class]["coverage"] += 1
+                per_class_results[-1]["coverage"] += 1
 
-                if nn_similarity >= nn_limit:
-                    per_class_results[test_class]["coverage"] += 1
-                    per_class_results[-1]["coverage"] += 1
-                    if nn_class == test_class:
-                        per_class_results[test_class]["matches"] += 1
-                        per_class_results[-1]["matches"] += 1
-                    break
-                else:
-                    mask = classes != nn_class
-                    sims = sims[mask]
-                    idxs = idxs[mask]
-                    classes = classes[mask]
+                per_class_preds[test_class].append(nn_class)
+                per_class_trues[test_class].append(test_class)
+                per_class_preds[-1].append(nn_class)
+                per_class_trues[-1].append(test_class)
+
+                if nn_class == test_class:
+                    per_class_results[test_class]["matches"] += 1
+                    per_class_results[-1]["matches"] += 1
+                break
+            else:
+                mask = classes != nn_class
+                dists_or_sims = dists_or_sims[mask]
+                classes = classes[mask]
 
     per_class_metrics = {}
     for label, results in per_class_results.items():
@@ -457,8 +449,8 @@ def search_faiss_limits_per_class_extended(data_type, selected_indices, index, m
             "coverage_percentage": coverage_percentage,
             "match_percentage": match_percentage,
         }
-    
-    return per_class_metrics
+
+    return per_class_metrics, per_class_preds, per_class_trues
 
 def calculate_limits(data_type, distance_type, samples_per_class, percentiles, train_indices=None, seed=42,):
     if data_type == 'baseline':
@@ -589,6 +581,8 @@ def extract_results(data_type, distance_type, metric, samples_per_class, limits,
 def extract_results_splits(data_type, distance_type, metric, samples, limits):
     accuracy_results = {sample_size: {limit: [] for limit in limits} for sample_size in samples}
     coverage_results = {sample_size: {limit: [] for limit in limits} for sample_size in samples}
+    all_preds = {sample_size: {limit: [] for limit in limits} for sample_size in samples}
+    all_trues = {sample_size: {limit: [] for limit in limits} for sample_size in samples}
 
     for seed in range(50):
         for sample_size in samples:
@@ -596,13 +590,15 @@ def extract_results_splits(data_type, distance_type, metric, samples, limits):
                 index, selected_indices = build_faiss(
                     data_type, distance_type, sample_size, seed=seed
                 )
-                coverage, accuracy, _ = search_faiss(
+                coverage, accuracy, _, preds, trues = search_faiss(
                     data_type, selected_indices, index, metric, limit
                 )
                 accuracy_results[sample_size][limit].append(accuracy)
                 coverage_results[sample_size][limit].append(coverage)
+                all_preds[sample_size][limit].extend(preds)
+                all_trues[sample_size][limit].extend(trues)
                     
-    return coverage_results, accuracy_results
+    return coverage_results, accuracy_results, all_preds, all_trues
 
 def extract_results_majority(data_type, distance_type, metric, samples_per_class, limits):
     coverage_results = {li: [] for li in limits}
@@ -642,6 +638,8 @@ def extract_results_limits(data_type, distance_type, metric, samples_per_class, 
 def extract_results_limits_splits(data_type, distance_type, metric, samples, percentiles):
     accuracy_results = {sample_size: {p: [] for p in percentiles} for sample_size in samples}
     coverage_results = {sample_size: {p: [] for p in percentiles} for sample_size in samples}
+    all_preds = {sample_size: {p: [] for p in percentiles} for sample_size in samples}
+    all_trues = {sample_size: {p: [] for p in percentiles} for sample_size in samples}
 
     for seed in range(50):
         for sample_size in samples:
@@ -652,13 +650,15 @@ def extract_results_limits_splits(data_type, distance_type, metric, samples, per
                 index, selected_indices = build_faiss(
                     data_type, distance_type, sample_size, seed=seed
                 )
-                coverage, accuracy, _ = search_faiss(
+                coverage, accuracy, _, preds, trues = search_faiss(
                     data_type, selected_indices, index, metric, limit
                 )
                 accuracy_results[sample_size][percentile].append(accuracy)
                 coverage_results[sample_size][percentile].append(coverage)
+                all_preds[sample_size][percentile].extend(preds)
+                all_trues[sample_size][percentile].extend(trues)
 
-    return coverage_results, accuracy_results
+    return coverage_results, accuracy_results, all_preds, all_trues
 
 def extract_results_per_class(data_type, distance_type, metric, samples, limits):
     per_class_coverage_results = {li: {sample: {} for sample in samples} for li in limits}
@@ -752,7 +752,9 @@ def extract_results_limits_per_class_splits_avg(data_type, distance_type, metric
     per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_missed_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
-
+    per_class_preds_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
+    per_class_trues_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
+    
     for seed in range(50):
         for sample_size in samples:
             class_limits = calculate_limits_per_class(
@@ -762,9 +764,16 @@ def extract_results_limits_per_class_splits_avg(data_type, distance_type, metric
                 index, selected_indices = build_faiss(
                     data_type, distance_type, sample_size, seed=seed
                 )
-                per_class_metrics = search_faiss_limits_per_class(
+                per_class_metrics, per_class_preds, per_class_trues = search_faiss_limits_per_class(
                     data_type, selected_indices, index, metric, limits
                 )
+
+                for label in per_class_preds:
+                    if label not in per_class_preds_all[percentile][sample_size]:
+                        per_class_preds_all[percentile][sample_size][label] = []
+                        per_class_trues_all[percentile][sample_size][label] = []
+                    per_class_preds_all[percentile][sample_size][label].extend(per_class_preds[label])
+                    per_class_trues_all[percentile][sample_size][label].extend(per_class_trues[label])
 
                 for label, metrics in per_class_metrics.items():
                     if label not in per_class_coverage_results[percentile][sample_size]:
@@ -793,9 +802,9 @@ def extract_results_limits_per_class_splits_avg(data_type, distance_type, metric
                     np.mean(per_class_missed_results[percentile][sample_size][label])
                 ]
 
-    return averaged_coverage_results, averaged_accuracy_results, averaged_missed_results
+    return averaged_coverage_results, averaged_accuracy_results, averaged_missed_results, per_class_preds_all, per_class_trues_all
 
-def extract_results_limits_per_class_extended(data_type, distance_type, metric, samples, percentiles):
+def extract_results_limits_per_class_iterative(data_type, distance_type, metric, samples, percentiles):
     per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
 
@@ -807,7 +816,7 @@ def extract_results_limits_per_class_extended(data_type, distance_type, metric, 
             index, selected_indices = build_faiss(
                 data_type, distance_type, sample_size
             )
-            per_class_metrics = search_faiss_limits_per_class_extended(
+            per_class_metrics = search_faiss_limits_per_class_iterative(
                 data_type, selected_indices, index, metric, limits
             )
 
@@ -821,9 +830,12 @@ def extract_results_limits_per_class_extended(data_type, distance_type, metric, 
 
     return per_class_coverage_results, per_class_accuracy_results
 
-def extract_results_limits_per_class_extended_splits_avg(data_type, distance_type, metric, samples, percentiles):
+def extract_results_limits_per_class_iterative_splits_avg(data_type, distance_type, metric, samples, percentiles):
     per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
+    per_class_preds_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
+    per_class_trues_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
+
 
     for seed in range(50):
         for sample_size in samples:
@@ -834,9 +846,16 @@ def extract_results_limits_per_class_extended_splits_avg(data_type, distance_typ
                 index, selected_indices = build_faiss(
                     data_type, distance_type, sample_size, seed=seed
                 )
-                per_class_metrics = search_faiss_limits_per_class_extended(
+                per_class_metrics, per_class_preds, per_class_trues = search_faiss_limits_per_class_iterative(
                     data_type, selected_indices, index, metric, limits
                 )
+
+                for label in per_class_preds:
+                    if label not in per_class_preds_all[percentile][sample_size]:
+                        per_class_preds_all[percentile][sample_size][label] = []
+                        per_class_trues_all[percentile][sample_size][label] = []
+                    per_class_preds_all[percentile][sample_size][label].extend(per_class_preds[label])
+                    per_class_trues_all[percentile][sample_size][label].extend(per_class_trues[label])
 
                 for label, metrics in per_class_metrics.items():
                     if label not in per_class_coverage_results[percentile][sample_size]:
@@ -859,7 +878,7 @@ def extract_results_limits_per_class_extended_splits_avg(data_type, distance_typ
                     np.mean(per_class_accuracy_results[percentile][sample_size][label])
                 ]
 
-    return averaged_coverage_results, averaged_accuracy_results
+    return averaged_coverage_results, averaged_accuracy_results, per_class_preds_all, per_class_trues_all
 
 def plot_results(coverage_results, accuracy_results, samples, distances, name, reverse=False, percentile=False):
     num_samples = len(samples)
@@ -1091,119 +1110,6 @@ def plot_results_per_class_missed(per_class_coverage_results, per_class_accuracy
 
     for j in range(i + 1, len(axes)):
         fig.delaxes(axes[j])
-
-    plt.tight_layout()
-    plt.show()
-
-def plot_results_limits_per_class_extended(per_class_coverage_results, per_class_accuracy_results, samples, percentiles, reverse=False):
-    num_samples = len(samples)
-    fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
-    axes = axes.flatten() if num_samples > 1 else [axes]
-
-    unique_classes = set()
-    for limit_results in per_class_coverage_results.values():
-        for sample_results in limit_results.values():
-            unique_classes.update(sample_results.keys())
-    unique_classes = sorted(unique_classes)
-
-    color_map = {label: plt.cm.tab20(i / 20) for i, label in enumerate(range(20))}
-    real_classes = [label for label in unique_classes if label != -1]
-    colors = [color_map[label] for label in real_classes]
-
-    for i, sample_size in enumerate(samples):
-        ax = axes[i]
-        ax2 = ax.twinx()
-
-        for class_idx, class_label in enumerate(real_classes):
-            if class_label == -1:
-                continue
-            coverage = [
-                per_class_coverage_results[percentile][sample_size].get(class_label, [0])[0]
-                for percentile in percentiles
-            ]
-            accuracy = [
-                per_class_accuracy_results[percentile][sample_size].get(class_label, [0])[0]
-                for percentile in percentiles
-            ]
-
-            filtered_percentiles = [d for d, c in zip(percentiles, coverage) if c > 0]
-            filtered_accuracy = [a for a, c in zip(accuracy, coverage) if c > 0]
-
-            ax.plot(filtered_percentiles, filtered_accuracy, label=f'Class {class_label} Accuracy', color=colors[class_idx])
-            ax.set_xlabel('Percentile')
-            ax.set_ylabel('Accuracy (%) —')
-            ax.tick_params(axis='y')
-            ax.set_ylim(0, 100)
-            ax.set_title(f'Sample Size: {sample_size}')
-            ax.grid(True)
-            
-            ax2.plot(percentiles, coverage, label=f'Class {class_label} Coverage %', color=colors[class_idx], linestyle='--')
-        
-            if -1 in unique_classes:
-                total_coverage = [
-                    per_class_coverage_results[percentile][sample_size].get(-1, [0])[0]
-                    for percentile in percentiles
-                ]
-                total_accuracy = [
-                    per_class_accuracy_results[percentile][sample_size].get(-1, [0])[0]
-                    for percentile in percentiles
-                ]
-                filtered_percentiles = [d for d, c in zip(percentiles, total_coverage) if c > 0]
-                filtered_accuracy = [a for a, c in zip(total_accuracy, total_coverage) if c > 0]
-
-                ax.plot(filtered_percentiles, filtered_accuracy, label='Total Accuracy', color='black', linewidth=1)
-                ax2.plot(percentiles, total_coverage, label='Total Coverage %', color='black', linestyle='--', linewidth=1)
-
-        ax2.set_ylabel('Coverage (%) --')
-        ax2.set_ylim(0, 100)
-        ax2.tick_params(axis='y')
-
-        if reverse:
-            ax.invert_xaxis()
-
-    for j in range(i + 1, len(axes)):
-        fig.delaxes(axes[j])
-
-    plt.tight_layout()
-    plt.show()
-
-    num_samples = len(samples)
-    fig, axes = plt.subplots(num_samples, 1, figsize=(6, 4 * num_samples), sharex=True)
-
-    axes = axes.flatten() if num_samples > 1 else [axes]
-
-    excluded_classes = list(coverage_results_all.keys())
-    color_map = {label: plt.cm.tab20(i / 20) for i, label in enumerate(range(20))}
-    colors = [color_map[label] for label in excluded_classes]
-
-    for i, sample_size in enumerate(samples):
-        ax = axes[i]
-        ax2 = ax.twinx()
-
-        for class_idx, excluded_class in enumerate(excluded_classes):
-            coverage_results = coverage_results_all[excluded_class]
-            accuracy_results = accuracy_results_all[excluded_class]
-
-            accuracies = [np.mean(accuracy_results[limit][i]) for limit in limits]
-            coverage = [np.mean(coverage_results[limit][i]) for limit in limits]
-
-            ax.plot(limits, accuracies, linestyle='-', color=colors[class_idx])
-            ax2.plot(limits, coverage, linestyle='--', color=colors[class_idx])
-
-        ax.set_xlabel('Distance')
-        ax.set_ylabel('Accuracy (%) —')
-        ax.tick_params(axis='y')
-        ax.set_ylim(0, 100)
-        ax.set_title(f'Sample Size: {sample_size}')
-        ax.grid(True)
-    
-        ax2.set_ylabel('Coverage (%) --')
-        ax2.tick_params(axis='y')
-        ax2.set_ylim(0, 100)
-
-        if reverse:
-            ax.invert_xaxis()
-            ax.set_xlabel('Similarity')
 
     plt.tight_layout()
     plt.show()

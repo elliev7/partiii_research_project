@@ -1,0 +1,43 @@
+,Percentile_1,Percentile_5,Percentile_10,Percentile_20,Percentile_30,Percentile_40,Percentile_50,Percentile_60,Percentile_70,Percentile_80,Percentile_90,Percentile_95,Percentile_99
+Sample_10,"Cov: 3.32%
+Acc: 93.20%","Cov: 8.23%
+Acc: 92.47%","Cov: 13.95%
+Acc: 91.52%","Cov: 26.83%
+Acc: 88.34%","Cov: 44.66%
+Acc: 80.68%","Cov: 57.69%
+Acc: 75.46%","Cov: 66.97%
+Acc: 72.25%","Cov: 78.03%
+Acc: 68.77%","Cov: 90.04%
+Acc: 65.08%","Cov: 96.75%
+Acc: 63.00%","Cov: 99.12%
+Acc: 62.22%","Cov: 99.62%
+Acc: 62.08%","Cov: 99.85%
+Acc: 62.03%"
+Sample_100,"Cov: 1.73%
+Acc: 90.79%","Cov: 7.83%
+Acc: 86.76%","Cov: 12.39%
+Acc: 87.41%","Cov: 23.22%
+Acc: 86.37%","Cov: 35.85%
+Acc: 86.67%","Cov: 46.81%
+Acc: 85.75%","Cov: 59.11%
+Acc: 83.37%","Cov: 72.09%
+Acc: 79.88%","Cov: 83.83%
+Acc: 76.19%","Cov: 93.10%
+Acc: 72.91%","Cov: 98.65%
+Acc: 70.67%","Cov: 99.84%
+Acc: 70.12%","Cov: 99.99%
+Acc: 70.06%"
+Sample_1000,"Cov: 3.81%
+Acc: 87.36%","Cov: 8.81%
+Acc: 86.92%","Cov: 13.47%
+Acc: 84.97%","Cov: 23.86%
+Acc: 86.12%","Cov: 33.85%
+Acc: 87.07%","Cov: 44.83%
+Acc: 87.78%","Cov: 55.90%
+Acc: 87.89%","Cov: 66.63%
+Acc: 87.26%","Cov: 77.63%
+Acc: 85.55%","Cov: 89.38%
+Acc: 82.16%","Cov: 97.60%
+Acc: 78.86%","Cov: 99.64%
+Acc: 77.85%","Cov: 99.99%
+Acc: 77.67%"
