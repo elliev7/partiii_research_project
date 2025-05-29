@@ -106,61 +106,6 @@ def search_faiss(data_type, selected_indices, index, metric, limit=None):
 
     return coverage_percentage, match_percentage, min_distances, preds, trues
 
-def search_faiss_majority(data_type, selected_indices, index, metric, limit=None):
-    if data_type == 'baseline':
-        data = vectors_baseline
-        labels = labels_baseline
-    elif data_type == 'embeddings':
-        data = vectors_embeddings
-        labels = labels_embeddings
-    
-    all_indices = np.arange(len(labels))
-    test_indices = np.setdiff1d(all_indices, selected_indices)
-
-    k = 10
-    if metric == "distance":
-        D, I = index.search(data[test_indices], k)
-    elif metric == "similarity":
-        query_vectors = data[test_indices]
-        query_vectors = query_vectors / np.linalg.norm(query_vectors, axis=1, keepdims=True)
-        D, I = index.search(query_vectors, k)
-    
-    test_labels = labels[test_indices]
-    neighbor_labels = labels[selected_indices[I.flatten()]].reshape(I.shape)
-    
-    matches = 0
-    coverage = 0
-
-    for i in range(len(test_indices)):  
-        if metric == "distance":
-            distances = np.sqrt(D[i])
-            valid_indices = distances <= limit if limit is not None else np.arange(len(distances))
-        elif metric == "similarity":
-            distances = D[i]
-            valid_indices = distances >= limit if limit is not None else np.arange(len(distances))
-        
-        valid_neighbors = neighbor_labels[i][valid_indices]
-        valid_distances = distances[valid_indices]
-
-        if len(valid_neighbors) == 0:
-            continue
-
-        unique_labels, counts = np.unique(valid_neighbors, return_counts=True)
-        max_count = np.max(counts)
-        majority_labels = unique_labels[counts == max_count]
-
-        if len(majority_labels) > 1:
-            closest_label = majority_labels[np.argmin([valid_distances[valid_neighbors == label][0] for label in majority_labels])]
-        else:
-            closest_label = majority_labels[0]
-
-        coverage += 1
-        matches += (test_labels[i] == closest_label)
-
-    coverage_percentage = (coverage / len(test_indices)) * 100
-    match_percentage = (matches / coverage) * 100 if coverage > 0 else 0
-    return coverage_percentage, match_percentage
-
 def search_faiss_per_class(data_type, selected_indices, index, metric, limit=None):
     if data_type == 'baseline':
         data = vectors_baseline
@@ -600,23 +545,7 @@ def extract_results_splits(data_type, distance_type, metric, samples, limits):
                     
     return coverage_results, accuracy_results, all_preds, all_trues
 
-def extract_results_majority(data_type, distance_type, metric, samples_per_class, limits):
-    coverage_results = {li: [] for li in limits}
-    accuracy_results = {li: [] for li in limits}
-
-    for limit in limits:
-        for sample_size in samples_per_class:
-            index, selected_indices = build_faiss(
-                data_type, distance_type, sample_size
-            )
-            coverage, accuracy = search_faiss_majority(
-                data_type, selected_indices, index, metric, limit
-            )
-            coverage_results[limit].append(coverage)
-            accuracy_results[limit].append(accuracy)   
-    return coverage_results, accuracy_results
-
-def extract_results_limits(data_type, distance_type, metric, samples_per_class, percentiles):
+def extract_results_automated(data_type, distance_type, metric, samples_per_class, percentiles):
     accuracy_results = {p: [] for p in percentiles}
     coverage_results = {p: [] for p in percentiles}
 
@@ -635,17 +564,18 @@ def extract_results_limits(data_type, distance_type, metric, samples_per_class, 
             accuracy_results[percentile].append(accuracy)   
     return coverage_results, accuracy_results
 
-def extract_results_limits_splits(data_type, distance_type, metric, samples, percentiles):
+def extract_results_automated_splits(data_type, distance_type, metric, samples, percentiles):
     accuracy_results = {sample_size: {p: [] for p in percentiles} for sample_size in samples}
     coverage_results = {sample_size: {p: [] for p in percentiles} for sample_size in samples}
     all_preds = {sample_size: {p: [] for p in percentiles} for sample_size in samples}
     all_trues = {sample_size: {p: [] for p in percentiles} for sample_size in samples}
 
-    for seed in range(50):
+    for seed in range(1):
         for sample_size in samples:
             limits = calculate_limits(
                 data_type, distance_type, sample_size, percentiles
             )
+            print(sample_size, limits)
             for percentile, limit in limits.items():
                 index, selected_indices = build_faiss(
                     data_type, distance_type, sample_size, seed=seed
@@ -660,7 +590,7 @@ def extract_results_limits_splits(data_type, distance_type, metric, samples, per
 
     return coverage_results, accuracy_results, all_preds, all_trues
 
-def extract_results_per_class(data_type, distance_type, metric, samples, limits):
+def extract_results_manual_per_class(data_type, distance_type, metric, samples, limits):
     per_class_coverage_results = {li: {sample: {} for sample in samples} for li in limits}
     per_class_accuracy_results = {li: {sample: {} for sample in samples} for li in limits}
 
@@ -683,7 +613,7 @@ def extract_results_per_class(data_type, distance_type, metric, samples, limits)
 
     return per_class_coverage_results, per_class_accuracy_results
 
-def extract_results_per_class_splits_avg(data_type, distance_type, metric, samples, limits):
+def extract_results_manual_per_class_splits_avg(data_type, distance_type, metric, samples, limits):
     per_class_coverage_results = {li: {sample: {} for sample in samples} for li in limits}
     per_class_accuracy_results = {li: {sample: {} for sample in samples} for li in limits}
 
@@ -719,7 +649,7 @@ def extract_results_per_class_splits_avg(data_type, distance_type, metric, sampl
 
     return averaged_coverage_results, averaged_accuracy_results
 
-def extract_results_limits_per_class(data_type, distance_type, metric, samples, percentiles):
+def extract_results_automated_per_class(data_type, distance_type, metric, samples, percentiles):
     per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_missed_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
@@ -748,18 +678,19 @@ def extract_results_limits_per_class(data_type, distance_type, metric, samples, 
 
     return per_class_coverage_results, per_class_accuracy_results, per_class_missed_results
 
-def extract_results_limits_per_class_splits_avg(data_type, distance_type, metric, samples, percentiles):
+def extract_results_automated_per_class_splits_avg(data_type, distance_type, metric, samples, percentiles):
     per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_missed_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_preds_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_trues_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     
-    for seed in range(50):
+    for seed in range(1):
         for sample_size in samples:
             class_limits = calculate_limits_per_class(
                 data_type, distance_type, sample_size, percentiles
             )
+            print(sample_size, class_limits)
             for percentile, limits in class_limits.items():
                 index, selected_indices = build_faiss(
                     data_type, distance_type, sample_size, seed=seed
@@ -804,7 +735,7 @@ def extract_results_limits_per_class_splits_avg(data_type, distance_type, metric
 
     return averaged_coverage_results, averaged_accuracy_results, averaged_missed_results, per_class_preds_all, per_class_trues_all
 
-def extract_results_limits_per_class_iterative(data_type, distance_type, metric, samples, percentiles):
+def extract_results_automated_per_class_iterative(data_type, distance_type, metric, samples, percentiles):
     per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
 
@@ -830,7 +761,7 @@ def extract_results_limits_per_class_iterative(data_type, distance_type, metric,
 
     return per_class_coverage_results, per_class_accuracy_results
 
-def extract_results_limits_per_class_iterative_splits_avg(data_type, distance_type, metric, samples, percentiles):
+def extract_results_automated_per_class_iterative_splits_avg(data_type, distance_type, metric, samples, percentiles):
     per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_preds_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}

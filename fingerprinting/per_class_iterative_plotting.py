@@ -15,15 +15,19 @@ def save_per_class_results_to_csv(coverage_results, accuracy_results, limits, sa
     for class_label in classes:
         row = []
         for limit in limits:
-            coverage = coverage_results[limit][sample_size].get(class_label, [0])[0]
-            accuracy = accuracy_results[limit][sample_size].get(class_label, [0])[0]
+            cov_val = coverage_results[limit][sample_size].get(class_label, 0)
+            acc_val = accuracy_results[limit][sample_size].get(class_label, 0)
+
+            coverage = cov_val[0] if isinstance(cov_val, list) else cov_val
+            accuracy = acc_val[0] if isinstance(acc_val, list) else acc_val
+
             row.append(f"Cov: {coverage:.2f}%\nAcc: {accuracy:.2f}%")
         data.append(row)
 
-    columns = [f"Percentile_{p}" for p in percentiles]
+    columns = [f"Percentile_{p}" for p in limits]
     index = [("Total" if c == -1 else f"Class_{c}") for c in classes]
     df = pd.DataFrame(data, columns=columns, index=index)
-    df.to_csv(f"/home/ev357/tcbench/src/fingerprinting/results/iterative_per_class/{name}.csv")
+    df.to_csv(f"/home/ev357/tcbench/src/fingerprinting/results/automated_per_class/{name}.csv")
 
 def save_confusion_matrix(preds, trues, sample, limit, name_prefix=""):
     y_true = []
