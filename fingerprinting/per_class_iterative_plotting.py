@@ -27,7 +27,7 @@ def save_per_class_results_to_csv(coverage_results, accuracy_results, limits, sa
     columns = [f"Percentile_{p}" for p in limits]
     index = [("Total" if c == -1 else f"Class_{c}") for c in classes]
     df = pd.DataFrame(data, columns=columns, index=index)
-    df.to_csv(f"/home/ev357/tcbench/src/fingerprinting/results/automated_per_class/{name}.csv")
+    df.to_csv(f"/home/ev357/tcbench/src/fingerprinting/results/iterative_per_class/{name}.csv")
 
 def save_confusion_matrix(preds, trues, sample, limit, name_prefix=""):
     y_true = []
