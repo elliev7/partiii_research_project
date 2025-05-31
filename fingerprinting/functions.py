@@ -1073,7 +1073,7 @@ def process_batch(batch_vectors, batch_indices, labels, labeled_indices, labeled
         is_strict = (dist <= strict if metric == 'distance' else dist >= strict)
         is_lenient = (dist <= lenient if metric == 'distance' else dist >= lenient)
 
-        if is_strict and nn_global_idx in original_labeled_indices:
+        if is_strict:  # and nn_global_idx in original_labeled_indices:   #comment second half of if statement for multi-hop
             labeled_indices = np.append(labeled_indices, idx)
             labeled_labels = np.append(labeled_labels, nn_label)
             strict_pred_labels.append(nn_label)
@@ -1095,7 +1095,7 @@ def compute_batch_metrics(pred_labels, true_labels, covered):
     coverage = (num_covered / len(covered)) * 100 if covered else 0
     if num_covered == 0:
         return 0.0, coverage
-    correct = sum(pred == true for pred, true, cov in zip(pred_labels, true_labels, covered) if cov)
+    correct = sum(pred == true for pred, true in zip(pred_labels, true_labels))
     accuracy = (correct / num_covered) * 100
     return accuracy, coverage
 
@@ -1125,6 +1125,7 @@ def semi_supervised(data_type, distance_type, metric, starting_samples_per_class
     batch_training_points.append(training_points)
     batch_correct_training_points.append(correct_training_points)
 
+    # uncomment for static thresholding
     raw_thresholds = calculate_limits(
         data_type, distance_type, None, [strict_percentile, lenient_percentile],
         train_indices=labeled_indices, seed=seed
@@ -1138,6 +1139,16 @@ def semi_supervised(data_type, distance_type, metric, starting_samples_per_class
         index, _ = build_faiss(data_type, distance_type, seed=seed, train_indices=labeled_indices)
         batch_indices = select_next_batch(unlabeled_indices, batch_size=batch_size, seed=seed)
         batch_vectors = data[batch_indices]
+
+        # uncomment for dynamic thresholding
+        # raw_thresholds = calculate_limits(
+        #     data_type, distance_type, None, [strict_percentile, lenient_percentile],
+        #     train_indices=labeled_indices, seed=seed
+        # )
+        # thresholds = {
+        #     'strict': raw_thresholds[strict_percentile],
+        #     'lenient': raw_thresholds[lenient_percentile]
+        # }
 
         (
             labeled_indices,
@@ -1208,7 +1219,7 @@ def process_batch_per_class(batch_vectors, batch_indices, labels, labeled_indice
         is_strict = (dist <= strict_thr if metric == 'distance' else dist >= strict_thr)
         is_lenient = (dist <= lenient_thr if metric == 'distance' else dist >= lenient_thr)
 
-        if is_strict and nn_global_idx in original_labeled_indices:
+        if is_strict: # and nn_global_idx in original_labeled_indices:  # comment second half of if statement for multi-hop
             labeled_indices = np.append(labeled_indices, idx)
             labeled_labels = np.append(labeled_labels, nn_label)
             strict_pred_labels.append(nn_label)
@@ -1247,7 +1258,7 @@ def compute_batch_metrics_per_class(per_class_accuracies, per_class_coverages, b
 
         if num_covered > 0:
             correct = sum(
-                pred == true for pred, true, cov in zip(batch_pred_labels[label], batch_true_labels[label], covered[label]) if cov
+                pred == true for pred, true in zip(batch_pred_labels[label], batch_true_labels[label])
             )
             accuracy = (correct / num_covered) * 100
         else:
@@ -1285,6 +1296,7 @@ def semi_supervised_per_class(data_type, distance_type, metric, starting_samples
     batch_training_points.append(training_points)
     batch_correct_training_points.append(correct_training_points)
 
+    # uncomment for static thresholding
     class_limits = calculate_limits_per_class(
         data_type, distance_type, starting_samples_per_class, [strict_percentile, lenient_percentile], 
         train_indices=labeled_indices, seed=seed
@@ -1297,6 +1309,15 @@ def semi_supervised_per_class(data_type, distance_type, metric, starting_samples
         index, _ = build_faiss(data_type, distance_type, seed=seed, train_indices=labeled_indices)
         batch_indices = select_next_batch(unlabeled_indices, batch_size=batch_size, seed=seed)
         batch_vectors = data[batch_indices]
+        
+        # uncomment for dynamic thresholding
+        # class_limits = calculate_limits_per_class(
+        #     data_type, distance_type, starting_samples_per_class, [strict_percentile, lenient_percentile], 
+        #     train_indices=labeled_indices, seed=seed
+        # )
+        
+        # strict_thresholds = class_limits[strict_percentile]
+        # lenient_thresholds = class_limits[lenient_percentile]
         
         (
             labeled_indices,
