@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import faiss
+from sklearn.metrics import confusion_matrix
 
 vectors_baseline = np.load('/home/ev357/tcbench/src/fingerprinting/mirage19/baseline_vectors.npy')
 labels_baseline = np.load('/home/ev357/tcbench/src/fingerprinting/mirage19/baseline_labels.npy')
@@ -400,10 +401,8 @@ def search_faiss_limits_per_class_iterative(data_type, selected_indices, index, 
 def calculate_limits(data_type, distance_type, samples_per_class, percentiles, train_indices=None, seed=42,):
     if data_type == 'baseline':
         data = vectors_baseline
-        labels = labels_baseline
     elif data_type == 'embeddings':
         data = vectors_embeddings
-        labels = labels_embeddings
 
     if train_indices is None:
         selected_indices = select_indices_by_class(
@@ -411,44 +410,35 @@ def calculate_limits(data_type, distance_type, samples_per_class, percentiles, t
         )
     else:
         selected_indices = train_indices
+
+    selected_data = data[selected_indices]
+    d = selected_data.shape[1]
     
-    selected_labels = labels[selected_indices]
-    unique_labels = np.unique(selected_labels)
-    all_nn_distances = []
+    if distance_type == 'euclidean':
+        index = faiss.IndexFlatL2(d)
+    elif distance_type == 'cosine':
+        selected_data = selected_data / np.linalg.norm(selected_data, axis=1, keepdims=True)
+        index = faiss.IndexFlatIP(d)
+    index.add(selected_data)
 
-    for label in unique_labels:
-        class_mask = selected_labels == label
-        class_indices = selected_indices[class_mask]
-        class_data = data[class_indices]
-        d = class_data.shape[1]
+    D, I = index.search(selected_data, k=2)
 
-        if distance_type == 'euclidean':
-            index = faiss.IndexFlatL2(d)
-        elif distance_type == 'cosine':
-            class_data = class_data / np.linalg.norm(class_data, axis=1, keepdims=True)
-            index = faiss.IndexFlatIP(d)
-        index.add(class_data)
-
-        k=2
-        D, I = index.search(class_data, k)
-        if distance_type == 'euclidean':
-            nn_distances = np.sqrt(D[:, 1])
-        elif distance_type == 'cosine':
-            nn_distances = D[:, 1]
-
-        all_nn_distances.extend(nn_distances)
-    
-    all_nn_distances = np.array(all_nn_distances)
+    if distance_type == 'euclidean':
+        nn_distances = np.sqrt(D[:, 1])
+    elif distance_type == 'cosine':
+        nn_distances = D[:, 1]
 
     limits_per_percentile = {}
     for percentile in percentiles:
-        if len(all_nn_distances) == 0:
+        if len(nn_distances) == 0:
             limit = 0
         else:
             if distance_type == 'euclidean':
-                limit = np.percentile(all_nn_distances, percentile)
+                limit = np.percentile(nn_distances, percentile)
+                limit = max(np.percentile(nn_distances, percentile), 0.0)
             elif distance_type == 'cosine':
-                limit = np.percentile(all_nn_distances, 100 - percentile)
+                limit = np.percentile(nn_distances, 100 - percentile)
+                limit = min(np.percentile(nn_distances, 100 - percentile), 1.0)
         limits_per_percentile[percentile] = limit
     return limits_per_percentile
 
@@ -502,8 +492,10 @@ def calculate_limits_per_class(data_type, distance_type, samples_per_class, perc
             else:
                 if distance_type == 'euclidean':
                     limits[label] = np.percentile(distances, percentile)
+                    limits[label] = max(np.percentile(distances, percentile), 0.0)
                 elif distance_type == 'cosine':
                     limits[label] = np.percentile(distances, 100 - percentile)
+                    limits[label] = min(np.percentile(distances, 100 - percentile), 1.0)
         limits_per_percentile[percentile] = limits
     return limits_per_percentile
 
@@ -570,12 +562,11 @@ def extract_results_automated_splits(data_type, distance_type, metric, samples, 
     all_preds = {sample_size: {p: [] for p in percentiles} for sample_size in samples}
     all_trues = {sample_size: {p: [] for p in percentiles} for sample_size in samples}
 
-    for seed in range(1):
+    for seed in range(50):
         for sample_size in samples:
             limits = calculate_limits(
                 data_type, distance_type, sample_size, percentiles
             )
-            print(sample_size, limits)
             for percentile, limit in limits.items():
                 index, selected_indices = build_faiss(
                     data_type, distance_type, sample_size, seed=seed
@@ -685,12 +676,11 @@ def extract_results_automated_per_class_splits_avg(data_type, distance_type, met
     per_class_preds_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_trues_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     
-    for seed in range(1):
+    for seed in range(50):
         for sample_size in samples:
             class_limits = calculate_limits_per_class(
                 data_type, distance_type, sample_size, percentiles
             )
-            print(sample_size, class_limits)
             for percentile, limits in class_limits.items():
                 index, selected_indices = build_faiss(
                     data_type, distance_type, sample_size, seed=seed
@@ -1045,6 +1035,10 @@ def plot_results_per_class_missed(per_class_coverage_results, per_class_accuracy
     plt.tight_layout()
     plt.show()
 
+
+
+
+
 def select_next_batch(unlabeled_indices, batch_size, seed=42):
     unlabeled_indices = list(unlabeled_indices)
     np.random.seed(seed)
@@ -1054,14 +1048,66 @@ def select_next_batch(unlabeled_indices, batch_size, seed=42):
         batch = np.random.choice(unlabeled_indices, size=batch_size, replace=False)
     return list(batch)
 
-def semi_supervised(data_type, distance_type, metric, starting_samples_per_class, high_confidence_percentile, low_confidence_percentile, batch_size=1024, seed=42):
+def process_batch(batch_vectors, batch_indices, labels, labeled_indices, labeled_labels,
+                  metric, index, thresholds, original_labeled_indices):
+    
+    strict_pred_labels = []
+    strict_true_labels = []
+    
+    if metric=='similarity':
+        batch_vectors = batch_vectors / np.linalg.norm(batch_vectors, axis=1, keepdims=True)
+    D, I = index.search(batch_vectors, k=1)
+    pred_labels, true_labels, covered = [], [], []
+    strict = thresholds['strict']
+    lenient = thresholds['lenient']
+    correct_training_points = 0
+
+    for idx, dist_arr, nn_arr in zip(batch_indices, D, I):
+        dist = np.clip(np.sqrt(dist_arr[0]), 0.0, 1.0) if metric == 'distance' else np.clip(dist_arr[0], 0.0, 1.0)
+
+        nn_idx = nn_arr[0]
+        nn_label = labeled_labels[nn_idx]
+        true_label = labels[idx]
+        nn_global_idx = labeled_indices[nn_idx]
+
+        is_strict = (dist <= strict if metric == 'distance' else dist >= strict)
+        is_lenient = (dist <= lenient if metric == 'distance' else dist >= lenient)
+
+        if is_strict and nn_global_idx in original_labeled_indices:
+            labeled_indices = np.append(labeled_indices, idx)
+            labeled_labels = np.append(labeled_labels, nn_label)
+            strict_pred_labels.append(nn_label)
+            strict_true_labels.append(true_label)
+            if nn_label == true_label:
+                correct_training_points += 1
+
+        if is_strict or is_lenient:
+            pred_labels.append(nn_label)
+            true_labels.append(true_label)
+            covered.append(True)
+        else:
+            covered.append(False)
+
+    return labeled_indices, labeled_labels, pred_labels, true_labels, covered, correct_training_points, strict_pred_labels, strict_true_labels
+
+def compute_batch_metrics(pred_labels, true_labels, covered):
+    num_covered = sum(covered)
+    coverage = (num_covered / len(covered)) * 100 if covered else 0
+    if num_covered == 0:
+        return 0.0, coverage
+    correct = sum(pred == true for pred, true, cov in zip(pred_labels, true_labels, covered) if cov)
+    accuracy = (correct / num_covered) * 100
+    return accuracy, coverage
+
+def semi_supervised(data_type, distance_type, metric, starting_samples_per_class, strict_percentile, lenient_percentile, batch_size=1024, seed=42):
     if data_type == 'baseline':
         data = vectors_baseline
         labels = labels_baseline
     elif data_type == 'embeddings':
         data = vectors_embeddings
         labels = labels_embeddings
-    
+
+    num_classes = len(np.unique(labels))
     all_indices = np.arange(len(labels))
     labeled_indices = select_indices_by_class(data_type, starting_samples_per_class, seed=seed)
     labeled_labels = labels[labeled_indices].copy()
@@ -1072,116 +1118,167 @@ def semi_supervised(data_type, distance_type, metric, starting_samples_per_class
     batch_coverages = []
     batch_training_points = []
     batch_correct_training_points = []
+    confusion_matrix_total = np.zeros((num_classes, num_classes), dtype=int)
 
     training_points = len(labeled_indices)
     correct_training_points = training_points
     batch_training_points.append(training_points)
     batch_correct_training_points.append(correct_training_points)
 
+    raw_thresholds = calculate_limits(
+        data_type, distance_type, None, [strict_percentile, lenient_percentile],
+        train_indices=labeled_indices, seed=seed
+    )
+    thresholds = {
+        'strict': raw_thresholds[strict_percentile],
+        'lenient': raw_thresholds[lenient_percentile]
+    }
+
     while unlabeled_indices:
         index, _ = build_faiss(data_type, distance_type, seed=seed, train_indices=labeled_indices)
         batch_indices = select_next_batch(unlabeled_indices, batch_size=batch_size, seed=seed)
         batch_vectors = data[batch_indices]
-        if metric == 'distance':
-            D, I = index.search(batch_vectors, k=1)
-        elif metric == 'similarity':
-            batch_vectors = batch_vectors / np.linalg.norm(batch_vectors, axis=1, keepdims=True)
-            D, I = index.search(batch_vectors, k=1)
-        
-        batch_pred_labels = []
-        batch_true_labels = []
-        covered = []
 
-        limits = calculate_limits(
-            data_type, distance_type, None, [high_confidence_percentile, low_confidence_percentile], train_indices=labeled_indices, seed=seed
+        (
+            labeled_indices,
+            labeled_labels,
+            batch_pred_labels,
+            batch_true_labels,
+            covered,
+            new_correct_training_points,
+            strict_pred_labels,
+            strict_true_labels,
+        ) = process_batch(
+            batch_vectors, 
+            batch_indices, 
+            labels, 
+            labeled_indices, 
+            labeled_labels,
+            metric, 
+            index, 
+            thresholds, 
+            original_labeled_indices
         )
-        high_confidence_threshold = limits[high_confidence_percentile]
-        low_confidence_threshold = limits[low_confidence_percentile]
 
-        for i, (idx, dist, nn_idx) in enumerate(zip(batch_indices, D, I)):
-            nn_label = labeled_labels[nn_idx[0]]
-            true_label = labels[idx]
-            nn_global_idx = labeled_indices[nn_idx[0]]
+        accuracy, coverage = compute_batch_metrics(batch_pred_labels, batch_true_labels, covered)
 
-            if metric == 'distance':
-                dist = np.sqrt(dist)
-                if dist < high_confidence_threshold:
-                    if not np.isclose(dist, 0) and nn_global_idx in original_labeled_indices:
-                        labeled_indices = np.append(labeled_indices, idx)
-                        labeled_labels = np.append(labeled_labels, nn_label)
-                        training_points += 1
-                        if nn_label == true_label:
-                            correct_training_points += 1
-                    batch_pred_labels.append(nn_label)
-                    batch_true_labels.append(true_label)
-                    covered.append(True)
-                elif dist < low_confidence_threshold:
-                    batch_pred_labels.append(nn_label)
-                    batch_true_labels.append(true_label)
-                    covered.append(True)
-                else:
-                    covered.append(False)
-            elif metric == 'similarity':
-                if dist > high_confidence_threshold:
-                    if not np.isclose(dist, 1.0) and nn_global_idx in original_labeled_indices:
-                        labeled_indices = np.append(labeled_indices, idx)
-                        labeled_labels = np.append(labeled_labels, nn_label)
-                        training_points += 1
-                        if nn_label == true_label:
-                            correct_training_points += 1
-                    batch_pred_labels.append(nn_label)
-                    batch_true_labels.append(true_label)
-                    covered.append(True)
-                elif dist > low_confidence_threshold:
-                    batch_pred_labels.append(nn_label)
-                    batch_true_labels.append(true_label)
-                    covered.append(True)
-                else:
-                    covered.append(False)
+        batch_accuracies.append(accuracy)
+        batch_coverages.append(coverage)
+        batch_training_points.append(len(labeled_indices))
+        correct_training_points += new_correct_training_points
+        batch_correct_training_points.append(correct_training_points)
 
-        num_covered = sum(covered)
-        coverage = (num_covered / len(batch_indices)) * 100 if batch_indices else 0
+        if strict_pred_labels and strict_true_labels:
+            cm = confusion_matrix(strict_true_labels, strict_pred_labels, labels=np.arange(num_classes))
+            confusion_matrix_total += cm
+        unlabeled_indices -= set(batch_indices)
+
+    return batch_accuracies, batch_coverages, batch_training_points, batch_correct_training_points, confusion_matrix_total
+
+def process_batch_per_class(batch_vectors, batch_indices, labels, labeled_indices, labeled_labels,
+                             metric, index, strict_thresholds, lenient_thresholds,
+                             original_labeled_indices):
+    unique_labels = np.unique(labels)
+    strict_true_labels = []
+    strict_pred_labels = []
+
+    pred_labels = {label: [] for label in unique_labels}
+    true_labels = {label: [] for label in unique_labels}
+    covered = {label: [] for label in unique_labels}
+
+    pred_labels[-1] = []
+    true_labels[-1] = []
+    covered[-1] = []
+
+    if metric == 'similarity':
+        batch_vectors = batch_vectors / np.linalg.norm(batch_vectors, axis=1, keepdims=True)
+
+    D, I = index.search(batch_vectors, k=1)
+    correct_points_added = 0
+
+    for idx, dist_arr, nn_idx in zip(batch_indices, D, I):
+        nn_label = labeled_labels[nn_idx[0]]
+        true_label = labels[idx]
+        nn_global_idx = labeled_indices[nn_idx[0]]
+
+        dist = np.sqrt(dist_arr[0]) if metric == 'distance' else dist_arr[0]
+        strict_thr = strict_thresholds[nn_label]
+        lenient_thr = lenient_thresholds[nn_label]
+
+        is_strict = (dist <= strict_thr if metric == 'distance' else dist >= strict_thr)
+        is_lenient = (dist <= lenient_thr if metric == 'distance' else dist >= lenient_thr)
+
+        if is_strict and nn_global_idx in original_labeled_indices:
+            labeled_indices = np.append(labeled_indices, idx)
+            labeled_labels = np.append(labeled_labels, nn_label)
+            strict_pred_labels.append(nn_label)
+            strict_true_labels.append(true_label)
+            if nn_label == true_label:
+                correct_points_added += 1
+
+        if is_strict or is_lenient:
+            pred_labels[nn_label].append(nn_label)
+            true_labels[nn_label].append(true_label)
+            covered[nn_label].append(True)
+
+            pred_labels[-1].append(nn_label)
+            true_labels[-1].append(true_label)
+            covered[-1].append(True)
+        else:
+            covered[nn_label].append(False)
+            covered[-1].append(False)
+
+    return (labeled_indices, labeled_labels,
+            pred_labels, true_labels,
+            covered, correct_points_added,
+            strict_pred_labels, strict_true_labels)
+
+def compute_batch_metrics_per_class(per_class_accuracies, per_class_coverages, batch_indices, labels,
+                             batch_pred_labels, batch_true_labels, covered):
+    unique_labels = [key for key in batch_pred_labels.keys() if key != -1]
+    for label in unique_labels + [-1]:
+        if label == -1:
+            denom = len(batch_indices)
+        else:
+            denom = sum(labels[idx] == label for idx in batch_indices)
+
+        num_covered = sum(covered[label])
+        coverage = (num_covered / denom) * 100 if denom > 0 else 0
+
         if num_covered > 0:
             correct = sum(
-                pred == true for pred, true, cov in zip(batch_pred_labels, batch_true_labels, covered) if cov
+                pred == true for pred, true, cov in zip(batch_pred_labels[label], batch_true_labels[label], covered[label]) if cov
             )
             accuracy = (correct / num_covered) * 100
         else:
             accuracy = 0
 
-        batch_accuracies.append(accuracy)
-        batch_coverages.append(coverage)
-        batch_training_points.append(training_points)
-        batch_correct_training_points.append(correct_training_points)
-        unlabeled_indices -= set(batch_indices)
+        per_class_accuracies[label].append(accuracy)
+        per_class_coverages[label].append(coverage)
 
-    return batch_accuracies, batch_coverages, batch_training_points, batch_correct_training_points
-
-def semi_supervised_per_class(data_type, distance_type, metric, starting_samples_per_class, high_confidence_percentile, low_confidence_percentile, batch_size=1024, seed=42):
+def semi_supervised_per_class(data_type, distance_type, metric, starting_samples_per_class, strict_percentile, lenient_percentile, batch_size=1024, seed=42):
     if data_type == 'baseline':
         data = vectors_baseline
         labels = labels_baseline
     elif data_type == 'embeddings':
         data = vectors_embeddings
         labels = labels_embeddings
-
+    
+    num_classes = len(np.unique(labels))
     all_indices = np.arange(len(labels))
     labeled_indices = list(select_indices_by_class(data_type, starting_samples_per_class, seed=seed))
     labeled_labels = labels[labeled_indices].copy()
     original_labeled_indices = set(labeled_indices)
     unlabeled_indices = set(all_indices) - set(labeled_indices)
 
-    per_class_accuracies = {}
-    per_class_coverages = {}
-    unique_labels = np.unique(labels)
-    for label in unique_labels:
-        per_class_accuracies[label] = []
-        per_class_coverages[label] = []
+    per_class_accuracies = {label: [] for label in np.unique(labels)}
+    per_class_coverages = {label: [] for label in np.unique(labels)}
     per_class_accuracies[-1] = []
     per_class_coverages[-1] = []
 
     batch_training_points = []
     batch_correct_training_points = []
+    confusion_matrix_total = np.zeros((num_classes, num_classes))
 
     training_points = len(labeled_indices)
     correct_training_points = training_points
@@ -1189,149 +1286,109 @@ def semi_supervised_per_class(data_type, distance_type, metric, starting_samples
     batch_correct_training_points.append(correct_training_points)
 
     class_limits = calculate_limits_per_class(
-        data_type, distance_type, starting_samples_per_class, [high_confidence_percentile, low_confidence_percentile], train_indices=labeled_indices, seed=seed
+        data_type, distance_type, starting_samples_per_class, [strict_percentile, lenient_percentile], 
+        train_indices=labeled_indices, seed=seed
     )
     
-    high_confidence_limits = class_limits[high_confidence_percentile]
-    low_confidence_limits = class_limits[low_confidence_percentile]
+    strict_thresholds = class_limits[strict_percentile]
+    lenient_thresholds = class_limits[lenient_percentile]
 
     while unlabeled_indices:
         index, _ = build_faiss(data_type, distance_type, seed=seed, train_indices=labeled_indices)
         batch_indices = select_next_batch(unlabeled_indices, batch_size=batch_size, seed=seed)
-        if metric == 'distance':
-            batch_vectors = data[batch_indices]
-            D, I = index.search(batch_vectors, k=1)
-        elif metric == 'similarity':
-            batch_vectors = data[batch_indices]
-            batch_vectors = batch_vectors / np.linalg.norm(batch_vectors, axis=1, keepdims=True)
-            D, I = index.search(batch_vectors, k=1)
+        batch_vectors = data[batch_indices]
+        
+        (
+            labeled_indices,
+            labeled_labels,
+            batch_pred_labels,
+            batch_true_labels,
+            covered,
+            new_correct_training_points,
+            strict_pred_labels,
+            strict_true_labels,
+        ) = process_batch_per_class(
+            batch_vectors,
+            batch_indices,
+            labels,
+            labeled_indices,
+            labeled_labels,
+            metric,
+            index,
+            strict_thresholds,
+            lenient_thresholds,
+            original_labeled_indices
+        )
 
-        batch_pred_labels = {label: [] for label in unique_labels}
-        batch_true_labels = {label: [] for label in unique_labels}
-        covered = {label: [] for label in unique_labels}
-        batch_pred_labels[-1] = []
-        batch_true_labels[-1] = []
-        covered[-1] = []
+        compute_batch_metrics_per_class(
+            per_class_accuracies, per_class_coverages, batch_indices, labels,
+            batch_pred_labels, batch_true_labels, covered
+        )
 
-        for idx, dist, nn_idx in zip(batch_indices, D, I):
-            nn_label = labeled_labels[nn_idx[0]]
-            true_label = labels[idx]
-            nn_global_idx = labeled_indices[nn_idx[0]]
-
-            if metric == 'distance':
-                dist = np.sqrt(dist)
-                high_thr = high_confidence_limits[nn_label]
-                low_thr = low_confidence_limits[nn_label]
-                if dist < high_thr:
-                    if not np.isclose(dist, 0) and nn_global_idx in original_labeled_indices:
-                        labeled_indices = np.append(labeled_indices, idx)
-                        labeled_labels = np.append(labeled_labels, nn_label)
-                        training_points += 1
-                        if nn_label == true_label:
-                            correct_training_points += 1
-                    batch_pred_labels[nn_label].append(nn_label)
-                    batch_true_labels[nn_label].append(true_label)
-                    covered[nn_label].append(True)
-                elif dist < low_thr:
-                    batch_pred_labels[nn_label].append(nn_label)
-                    batch_true_labels[nn_label].append(true_label)
-                    covered[nn_label].append(True)
-                else:
-                    covered[nn_label].append(False)
-            elif metric == 'similarity':
-                high_thr = high_confidence_limits[nn_label]
-                low_thr = low_confidence_limits[nn_label]
-                if dist > high_thr:
-                    if not np.isclose(dist, 1.0) and nn_global_idx in original_labeled_indices:
-                        labeled_indices = np.append(labeled_indices, idx)
-                        labeled_labels = np.append(labeled_labels, nn_label)
-                        training_points += 1
-                        if nn_label == true_label:
-                            correct_training_points += 1
-                    batch_pred_labels[nn_label].append(nn_label)
-                    batch_true_labels[nn_label].append(true_label)
-                    covered[nn_label].append(True)
-                elif dist > low_thr:
-                    batch_pred_labels[nn_label].append(nn_label)
-                    batch_true_labels[nn_label].append(true_label)
-                    covered[nn_label].append(True)
-                else:
-                    covered[nn_label].append(False)
-
-            if metric == 'distance':
-                high_thr = high_confidence_limits[nn_label]
-                low_thr = low_confidence_limits[nn_label]
-                if dist < low_thr:
-                    batch_pred_labels[-1].append(nn_label)
-                    batch_true_labels[-1].append(true_label)
-                    covered[-1].append(True)
-                else:
-                    covered[-1].append(False)
-            elif metric == 'similarity':
-                high_thr = high_confidence_limits[nn_label]
-                low_thr = low_confidence_limits[nn_label]
-                if dist > low_thr:
-                    batch_pred_labels[-1].append(nn_label)
-                    batch_true_labels[-1].append(true_label)
-                    covered[-1].append(True)
-                else:
-                    covered[-1].append(False)
-
-        for label in list(unique_labels) + [-1]:
-            if label == -1:
-                denom = len(batch_indices)
-            else:
-                denom = sum([labels[idx] == label for idx in batch_indices])
-            num_covered = sum(covered[label])
-            coverage = (num_covered / denom) * 100 if batch_indices else 0
-            if num_covered > 0:
-                correct = sum(
-                    pred == true for pred, true, cov in zip(batch_pred_labels[label], batch_true_labels[label], covered[label]) if cov
-                )
-                accuracy = (correct / num_covered) * 100
-            else:
-                accuracy = 0
-            per_class_accuracies[label].append(accuracy)
-            per_class_coverages[label].append(coverage)
-
-        batch_training_points.append(training_points)
+        batch_training_points.append(len(labeled_indices))
+        correct_training_points += new_correct_training_points
         batch_correct_training_points.append(correct_training_points)
+
+        if strict_pred_labels and strict_true_labels:
+            cm = confusion_matrix(strict_true_labels, strict_pred_labels, labels=range(num_classes))
+            confusion_matrix_total += cm
         unlabeled_indices -= set(batch_indices)
 
-    return per_class_accuracies, per_class_coverages, batch_training_points, batch_correct_training_points
+    return per_class_accuracies, per_class_coverages, batch_training_points, batch_correct_training_points, confusion_matrix_total
 
-def run_multiple_avg(data_type, distance_type, metric, starting_sample_size, high_confidence_percentile, low_confidence_percentile, num_runs, batch_size=1024):
+def run_multiple_avg(data_type, distance_type, metric, starting_sample_size, strict_percentile, lenient_percentile, num_runs, batch_size=1024):
     accuracy_all = []
     coverage_all = []
     train_all = []
     cor_train_all = []
+    all_conf_matrices = []
+
     for seed in range(1, num_runs + 1):
-        acc, cov, tp, ctp = semi_supervised(data_type, distance_type, metric, starting_sample_size, high_confidence_percentile, low_confidence_percentile, batch_size=batch_size, seed=seed)
+        acc, cov, tp, ctp, conf_matrices = semi_supervised(
+            data_type, distance_type, metric, starting_sample_size, 
+            strict_percentile, lenient_percentile, batch_size=batch_size, seed=seed)
         accuracy_all.append(acc)
         coverage_all.append(cov)
         train_all.append(tp)
         cor_train_all.append(ctp)
+        all_conf_matrices.append(conf_matrices)
+
     accuracy_all = np.array(accuracy_all)
     coverage_all = np.array(coverage_all)
     train_all = np.array(train_all)
     cor_train_all = np.array(cor_train_all)
+
     accuracy_avg = np.mean(accuracy_all, axis=0)
     coverage_avg = np.mean(coverage_all, axis=0)
     train_avg = np.round(np.mean(train_all, axis=0)).astype(int)
     cor_train_avg = np.round(np.mean(cor_train_all, axis=0)).astype(int)
-    return coverage_avg, accuracy_avg, train_avg, cor_train_avg
 
-def run_multiple_per_class_avg(data_type, distance_type, metric, starting_sample_size, high_confidence_percentile, low_confidence_percentile, num_runs, batch_size=1024):
+    matrices = [cm for cm in all_conf_matrices if cm is not None]
+    if matrices:
+        stacked = np.stack(matrices)
+        averaged_conf_matrix = np.round(np.mean(stacked, axis=0)).astype(int)
+    else:
+        averaged_conf_matrix = None
+
+    return coverage_avg, accuracy_avg, train_avg, cor_train_avg, averaged_conf_matrix
+
+def run_multiple_per_class_avg(data_type, distance_type, metric, starting_sample_size, strict_percentile, lenient_percentile, num_runs, batch_size=1024):
     accuracy_all = []
     coverage_all = []
     train_all = []
     cor_train_all = []
+    all_conf_matrices = []
+
     for seed in range(1, num_runs + 1):
-        acc, cov, tp, ctp = semi_supervised_per_class(data_type, distance_type, metric, starting_sample_size, high_confidence_percentile, low_confidence_percentile, batch_size=batch_size, seed=seed)
+        acc, cov, tp, ctp, conf_matrices = semi_supervised_per_class(
+            data_type, distance_type, metric, starting_sample_size, 
+            strict_percentile, lenient_percentile, batch_size=batch_size, seed=seed)
         accuracy_all.append(acc)
         coverage_all.append(cov)
         train_all.append(tp)
         cor_train_all.append(ctp)
+        all_conf_matrices.append(conf_matrices)
+
     class_keys = sorted(accuracy_all[0].keys())
     accuracy_avg = {}
     coverage_avg = {}
@@ -1342,9 +1399,18 @@ def run_multiple_per_class_avg(data_type, distance_type, metric, starting_sample
         coverage_avg[k] = np.mean(coverage_k, axis=0)
     train_all = np.array(train_all)
     cor_train_all = np.array(cor_train_all)
+
     train_avg = np.round(np.mean(train_all, axis=0)).astype(int)
     cor_train_avg = np.round(np.mean(cor_train_all, axis=0)).astype(int)
-    return coverage_avg, accuracy_avg, train_avg, cor_train_avg
+
+    matrices = [cm for cm in all_conf_matrices if cm is not None]
+    if matrices:
+        stacked = np.stack(matrices)
+        averaged_conf_matrix = np.round(np.mean(stacked, axis=0)).astype(int)
+    else:
+        averaged_conf_matrix = None
+
+    return coverage_avg, accuracy_avg, train_avg, cor_train_avg, averaged_conf_matrix
 
 def plot_all_classes_by_batch(coverage_results, accuracy_results):
     fig, ax1 = plt.subplots(figsize=(6, 4))
