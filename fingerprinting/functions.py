@@ -1073,7 +1073,7 @@ def process_batch(batch_vectors, batch_indices, labels, labeled_indices, labeled
         is_strict = (dist <= strict if metric == 'distance' else dist >= strict)
         is_lenient = (dist <= lenient if metric == 'distance' else dist >= lenient)
 
-        if is_strict:  # and nn_global_idx in original_labeled_indices:   #comment second half of if statement for multi-hop
+        if is_strict and nn_global_idx in original_labeled_indices:   #comment second half of if statement for multi-hop
             labeled_indices = np.append(labeled_indices, idx)
             labeled_labels = np.append(labeled_labels, nn_label)
             strict_pred_labels.append(nn_label)
@@ -1219,7 +1219,7 @@ def process_batch_per_class(batch_vectors, batch_indices, labels, labeled_indice
         is_strict = (dist <= strict_thr if metric == 'distance' else dist >= strict_thr)
         is_lenient = (dist <= lenient_thr if metric == 'distance' else dist >= lenient_thr)
 
-        if is_strict: # and nn_global_idx in original_labeled_indices:  # comment second half of if statement for multi-hop
+        if is_strict and nn_global_idx in original_labeled_indices:  # comment second half of if statement for multi-hop
             labeled_indices = np.append(labeled_indices, idx)
             labeled_labels = np.append(labeled_labels, nn_label)
             strict_pred_labels.append(nn_label)
