@@ -3,10 +3,10 @@ import pickle
 import numpy as np
 from scipy.spatial.distance import cdist, pdist, squareform
 
-vectors_baseline = np.load('/home/ev357/tcbench/src/fingerprinting/artifacts-mirage19/baseline_vectors.npy')
-labels_baseline = np.load('/home/ev357/tcbench/src/fingerprinting/artifacts-mirage19/baseline_labels.npy')
-vectors_embeddings = np.load('/home/ev357/tcbench/src/fingerprinting/artifacts-mirage19/embeddings_vectors.npy')
-labels_embeddings = np.load('/home/ev357/tcbench/src/fingerprinting/artifacts-mirage19/embeddings_labels.npy')
+vectors_baseline = np.load('/home/ev357/tcbench/src/fingerprinting/mirage19/baseline_vectors.npy')
+labels_baseline = np.load('/home/ev357/tcbench/src/fingerprinting/mirage19/baseline_labels.npy')
+vectors_embeddings = np.load('/home/ev357/tcbench/src/fingerprinting/mirage19/embeddings_vectors.npy')
+labels_embeddings = np.load('/home/ev357/tcbench/src/fingerprinting/mirage19/embeddings_labels.npy')
 
 def calculate_within_class_distances(feature_matrix, true_labels, metric):
     class_distances = {}
