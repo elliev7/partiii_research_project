@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import faiss
+from scipy import stats
 from sklearn.metrics import confusion_matrix
 
 vectors_baseline = np.load('/home/ev357/tcbench/src/fingerprinting/mirage19/baseline_vectors.npy')
@@ -676,7 +677,16 @@ def extract_results_automated_per_class_splits_avg(data_type, distance_type, met
     per_class_preds_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_trues_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     
-    for seed in range(50):
+    n_runs = 50
+    t_crit = stats.t.ppf(0.975, df=n_runs-1)
+
+    def mean_and_ci(values):
+        values = np.array(values)
+        mean = np.mean(values)
+        ci = stats.sem(values) * t_crit
+        return (mean, ci)
+
+    for seed in range(n_runs):
         for sample_size in samples:
             class_limits = calculate_limits_per_class(
                 data_type, distance_type, sample_size, percentiles
@@ -713,19 +723,19 @@ def extract_results_automated_per_class_splits_avg(data_type, distance_type, met
     for percentile in class_limits.keys():
         for sample_size in samples:
             for label in per_class_coverage_results[percentile][sample_size]:
-                averaged_coverage_results[percentile][sample_size][label] = [
-                    np.mean(per_class_coverage_results[percentile][sample_size][label])
-                ]
-                averaged_accuracy_results[percentile][sample_size][label] = [
-                    np.mean(per_class_accuracy_results[percentile][sample_size][label])
-                ]
-                averaged_missed_results[percentile][sample_size][label] = [
-                    np.mean(per_class_missed_results[percentile][sample_size][label])
-                ]
+                averaged_coverage_results[percentile][sample_size][label] = mean_and_ci(
+                    per_class_coverage_results[percentile][sample_size][label]
+                )
+                averaged_accuracy_results[percentile][sample_size][label] = mean_and_ci(
+                    per_class_accuracy_results[percentile][sample_size][label]
+                )
+                averaged_missed_results[percentile][sample_size][label] = mean_and_ci(
+                    per_class_missed_results[percentile][sample_size][label]
+                )
 
     return averaged_coverage_results, averaged_accuracy_results, averaged_missed_results, per_class_preds_all, per_class_trues_all
 
-def extract_results_automated_per_class_iterative(data_type, distance_type, metric, samples, percentiles):
+def extract_results_iterative_per_class(data_type, distance_type, metric, samples, percentiles):
     per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
 
@@ -751,12 +761,20 @@ def extract_results_automated_per_class_iterative(data_type, distance_type, metr
 
     return per_class_coverage_results, per_class_accuracy_results
 
-def extract_results_automated_per_class_iterative_splits_avg(data_type, distance_type, metric, samples, percentiles):
+def extract_results_iterative_per_class_splits_avg(data_type, distance_type, metric, samples, percentiles):
     per_class_coverage_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_accuracy_results = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_preds_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
     per_class_trues_all = {percentile: {sample: {} for sample in samples} for percentile in percentiles}
 
+    n_runs = 50
+    t_crit = stats.t.ppf(0.975, df=n_runs - 1)
+
+    def mean_and_ci(values):
+        values = np.array(values)
+        mean = np.mean(values)
+        ci = stats.sem(values * t_crit)
+        return (mean, ci)
 
     for seed in range(50):
         for sample_size in samples:
@@ -792,12 +810,12 @@ def extract_results_automated_per_class_iterative_splits_avg(data_type, distance
     for percentile in class_limits.keys():
         for sample_size in samples:
             for label in per_class_coverage_results[percentile][sample_size]:
-                averaged_coverage_results[percentile][sample_size][label] = [
-                    np.mean(per_class_coverage_results[percentile][sample_size][label])
-                ]
-                averaged_accuracy_results[percentile][sample_size][label] = [
-                    np.mean(per_class_accuracy_results[percentile][sample_size][label])
-                ]
+                averaged_coverage_results[percentile][sample_size][label] = mean_and_ci(
+                    per_class_coverage_results[percentile][sample_size][label]
+                )
+                averaged_accuracy_results[percentile][sample_size][label] = mean_and_ci(
+                    per_class_accuracy_results[percentile][sample_size][label]
+                )
 
     return averaged_coverage_results, averaged_accuracy_results, per_class_preds_all, per_class_trues_all
 
